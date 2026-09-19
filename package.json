@@ -1,0 +1,13 @@
+{
+  "name": "@trybench/sdk",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Server-side production tracing for Bench",
+  "license": "Apache-2.0",
+  "engines": { "node": ">=20" },
+  "exports": { ".": { "types": "./dist/index.d.ts", "import": "./dist/index.js" } },
+  "files": ["dist", "README.md", "skills"],
+  "scripts": { "build": "tsc", "prepare": "npm run build", "typecheck": "tsc --noEmit", "test": "npm run build && node --test test/*.test.mjs" },
+  "devDependencies": { "@types/node": "^22.0.0", "typescript": "^5.9.0" }
+}
