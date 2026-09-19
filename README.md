@@ -80,5 +80,7 @@ TypeSafe is an optional server-side adapter, not an SDK dependency. Keys and
 provider requests stay in bench-api. No automatic code deployment, policy
 rewrite or promotion of model judgments to golden labels occurs.
 
-The setup skill is at `skills/bench-sdk/SKILL.md`. Full local documentation is
-maintained in bench-pipeline's `docs/mintlify/sdk` until the docs site is published.
+The setup skill is at `skills/bench-sdk/SKILL.md`. Documentation is maintained in
+the separate `bench-docs` repository and published at https://docs.usebench.ai/sdk/quickstart.
+The staging setup can use a commit-pinned Git install from this private repository.
+It requires GitHub repository access. No npm release is implied by that preview.
