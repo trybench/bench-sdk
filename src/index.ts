@@ -1,5 +1,7 @@
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomBytes } from "node:crypto";
+import { scoreSystemCase, systemReport, validateSystemOptions, type SystemEvaluationOptions, type SystemEvaluationReport } from './system-evaluation.js';
+export * from './system-evaluation.js';
 
 export type SpanKind = "LLM" | "TOOL" | "CHAIN" | "RETRIEVER" | "AGENT" | "EMBEDDING";
 export interface SpanInput {
@@ -26,7 +28,7 @@ export interface BenchOptions {
  onError?: (error: Error) => void;
  fetch?: typeof globalThis.fetch;
 }
-interface Span {
+export interface Span {
  span_id: string; parent_span_id?: string; name: string; kind: SpanKind;
  started_at: string; ended_at: string; status: string;
  attributes: Record<string, unknown>; input_value?: string; output_value?: string; model_name?: string;
@@ -34,14 +36,14 @@ interface Span {
 interface Trace { trace_id: string; source: "bench_sdk"; spans: Span[] }
 const sensitiveKey = /authorization|cookie|password|secret|token|api.?key|email|phone|address|user.?id/i;
 const allowedMetadata = /^(code\.(filepath|lineno)|gen_ai\.(system|operation\.name|usage\.(input_tokens|output_tokens))|bench\.(component_id|environment|prompt_version))$/;
-function redact(value: unknown, depth = 0): unknown {
+function redact(value: unknown, depth = 0, maxItems = 100): unknown {
  if (depth > 12) return "[DEPTH_LIMIT]";
  if (typeof value === "string") return value
   .replace(/(?:bench_sk_|apikey_|e2b_|sk-)[a-zA-Z0-9_-]{8,}|Bearer\s+[a-zA-Z0-9._~+\/-]+/gi,"[REDACTED_SECRET]")
   .replace(/[a-z0-9.!#$%&'*+\/=?^_`{|}~-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+/gi,"[REDACTED_EMAIL]")
   .replace(/\+\d[\d ()-]{8,}\d/g,"[REDACTED_PHONE]").slice(0,16000);
- if (Array.isArray(value)) return value.slice(0,100).map(v=>redact(v,depth+1));
- if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).slice(0,100).map(([k,v])=>[k,sensitiveKey.test(k)&&!(/^gen_ai\.usage\.(input_tokens|output_tokens)$/.test(k)&&typeof v==="number")?"[REDACTED]":redact(v,depth+1)]));
+ if (Array.isArray(value)) return value.slice(0,maxItems).map(v=>redact(v,depth+1,maxItems));
+ if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).slice(0,maxItems).map(([k,v])=>[k,sensitiveKey.test(k)&&!(/^gen_ai\.usage\.(input_tokens|output_tokens)$/.test(k)&&typeof v==="number")?"[REDACTED]":redact(v,depth+1,maxItems)]));
  if (value === null || ["number","boolean"].includes(typeof value)) return value;
  return undefined;
 }
@@ -50,7 +52,7 @@ function redact(value: unknown, depth = 0): unknown {
 export class Bench {
  private readonly options: BenchOptions;
  private readonly endpoint: string;
- private readonly storage = new AsyncLocalStorage<{traceId:string;spanId:string;sampled:boolean}>();
+ private readonly storage = new AsyncLocalStorage<{traceId:string;spanId:string;sampled:boolean; evaluation?: { spans: Span[]; active: boolean; limited: boolean; pending: number }}>();
  private queue: Trace[] = [];
  private timer: ReturnType<typeof setInterval>;
  private flushing?: Promise<void>;
@@ -79,26 +81,86 @@ export class Bench {
    if(input.componentId)attrs["bench.component_id"]=input.componentId;
    const content=(value:unknown)=>value===undefined?undefined:JSON.stringify(this.safe(value));
    const span:Span={span_id:spanId,parent_span_id:parent,name:String(this.safe(input.name)).slice(0,200),kind:input.kind??"LLM",started_at:new Date(start).toISOString(),ended_at:new Date().toISOString(),status,attributes:this.safe(attrs) as Record<string,unknown>,model_name:input.model?String(this.safe(input.model)).slice(0,200):undefined};
-   if(this.options.captureContent){span.input_value=content(input.input);span.output_value=content(input.output)}
+   const evaluation = this.storage.getStore()?.evaluation;
+   if(this.options.captureContent || evaluation){span.input_value=content(input.input);span.output_value=content(input.output)}
+   if(evaluation){
+    if(!evaluation.active)return;
+    if(evaluation.spans.length >= 100 || Buffer.byteLength(JSON.stringify([...evaluation.spans, span])) > 500000){evaluation.limited=true;return}
+    evaluation.spans.push(span);
+    return;
+   }
    const trace:Trace={trace_id:traceId,source:"bench_sdk",spans:[span]};
    if(Buffer.byteLength(JSON.stringify(trace))>200000){this.dropped++;this.report("Trace too large; dropped.");return}
    if(this.queue.length >= (this.options.maxQueueSize??200)){this.dropped++;return}
    this.queue.push(trace);
-  }catch{this.dropped++;this.report("Trace could not be serialized; dropped.")}
+  }catch{const evaluation=this.storage.getStore()?.evaluation;if(evaluation)evaluation.limited=true;this.dropped++;this.report("Trace could not be serialized; dropped.")}
  }
  async trace<T>(input:SpanInput,fn:()=>T|Promise<T>):Promise<T>{
   const parent=this.storage.getStore();
   const traceId=parent?.traceId??randomBytes(16).toString("hex"),spanId=randomBytes(8).toString("hex");
   const sampled=parent?.sampled??Math.random()<(this.options.sampleRate??1),start=Date.now();
-  return this.storage.run({traceId,spanId,sampled},async()=>{
+  return this.storage.run({traceId,spanId,sampled,evaluation:parent?.evaluation},async()=>{
+   if(parent?.evaluation)parent.evaluation.pending++;
    try{const output=await fn();if(sampled)this.capture({...input,output:input.output === undefined ? output : input.output},traceId,spanId,parent?.spanId,start,"ok");return output}
    catch(error){if(sampled)this.capture(input,traceId,spanId,parent?.spanId,start,"error");throw error}
+   finally{if(parent?.evaluation)parent.evaluation.pending--}
   });
  }
  record(input:SpanInput):void{
   const parent=this.storage.getStore();
   if(!(parent?.sampled??Math.random()<(this.options.sampleRate??1)))return;
   this.capture(input,parent?.traceId??randomBytes(16).toString("hex"),randomBytes(8).toString("hex"),parent?.spanId,Date.now(),"ok");
+ }
+ /** Execute the real application. Local reports are evidence, not server-verified results.
+  * Captures redacted content for these test calls only. Does not upload or spend Bench credits.
+  * Use a test tenant and sandboxed/mocked external side effects in your application adapter.
+  */
+ async evaluateSystem<Input, Output>(options: SystemEvaluationOptions<Input, Output>): Promise<SystemEvaluationReport> {
+  if(this.closed)throw new Error('Bench is shut down.');
+  validateSystemOptions(options);
+  // Snapshot cases before application execution so runtime code cannot mutate the oracle.
+  const pinned = {...options, cases: structuredClone(options.cases)};
+  const results = [];
+  for (const item of pinned.cases) {
+   if(options.signal?.aborted)break;
+   const evaluation = {spans: [] as Span[], active: true, limited: false, pending: 0};
+   const controller = new AbortController();
+   let timer: ReturnType<typeof setTimeout> | undefined;
+   let output: unknown;
+   let failure: string | undefined;
+   const aborted = () => controller.abort();
+   options.signal?.addEventListener('abort', aborted, {once:true});
+   try {
+    output = await Promise.race([
+     this.storage.run({traceId:randomBytes(16).toString('hex'),spanId:'',sampled:true,evaluation}, () => this.trace({name:'system-entrypoint',kind:'AGENT',input:structuredClone(item.input)}, () => options.run(structuredClone(item.input),{caseId:item.id,signal:controller.signal}))),
+     new Promise<never>((_,reject) => {
+      controller.signal.addEventListener('abort',()=>reject(new Error('Application evaluation stopped.')), {once:true});
+      timer = setTimeout(()=>controller.abort(), options.timeoutMs ?? 30000);
+     }),
+    ]);
+   } catch { failure = controller.signal.aborted ? 'Application timed out or was stopped. No complete score.' : 'Application execution failed. Inspect recorded spans.'; }
+   finally { evaluation.active=false;clearTimeout(timer);options.signal?.removeEventListener('abort',aborted); }
+   if(evaluation.limited)failure='Runtime evidence exceeded its limit or could not be captured. No complete score.';
+   if(evaluation.pending){failure='Application returned with unfinished work. Await all tools and model calls before returning.';controller.abort()}
+   const result = scoreSystemCase(item, output, evaluation.spans, failure);
+   result.case_definition = this.safe(item) as typeof item;
+   result.output = this.safe(result.output);
+   results.push(result);
+   // A callback cannot be forcibly killed inside Node. Never start more cases after timeout.
+   if(controller.signal.aborted)break;
+  }
+  return systemReport(pinned,results);
+ }
+ /** Explicit upload of redacted runtime evidence. Does not run a judge or spend Bench credits. */
+ async publishSystemEvaluation(systemId: number, report: SystemEvaluationReport): Promise<{ evaluation: { id: number; ai_system_id: number } }> {
+  if(!Number.isSafeInteger(systemId) || systemId<1)throw new Error('Select a system.');
+  // Case content was redacted at capture. Preserve bounded structural arrays,
+  // including failure checks; truncating them could change the stored verdict.
+  const body=JSON.stringify(redact(this.options.redact ? this.options.redact(report) : report,0,300));
+  if(Buffer.byteLength(body)>500000)throw new Error('Runtime report exceeds 500 KB. Retain it locally or split the suite.');
+  const response=await(this.options.fetch??globalThis.fetch)(this.endpoint.replace(/\/api\/traces$/,`/api/ai-systems/${systemId}/runtime-evaluations`),{method:'POST',redirect:'error',headers:{'Content-Type':'application/json',Authorization:'Bearer '+this.options.apiKey},body,signal:AbortSignal.timeout(this.options.timeoutMs??5000)});
+  if(!response.ok)throw new Error(`Could not save runtime results (HTTP ${response.status}). Local results are still available.`);
+  return response.json() as Promise<{evaluation:{id:number;ai_system_id:number}}>;
  }
  get stats(){return {queued:this.queue.length,dropped:this.dropped}}
  /** Flush on serverless shutdown. Network failures are reported, never thrown into app requests. */
