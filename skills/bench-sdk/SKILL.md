@@ -23,7 +23,7 @@ read from Bench, never invented ones.
 
 Start metadata-only (`captureContent: false`). Content capture and automatic
 paid checks are separate opt-ins. A setup key has a zero evaluation cap. Do not
-enable automatic evaluation, share customer data with TypeSafe, or modify caps
+enable automatic evaluation, enable optional external judging, or modify caps
 as an installation step. Built-in redaction is not guaranteed anonymization.
 
 Verify with injected fetch and synthetic inputs. Assert original return/error
