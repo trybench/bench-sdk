@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=77.0.3"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "trybench-sdk"
+version = "0.1.0"
+description = "Trace AI applications and test their behavior with Bench"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "Apache-2.0"
+license-files = ["LICENSE"]
+authors = [{name = "Bench"}]
+classifiers = ["Development Status :: 4 - Beta", "Programming Language :: Python :: 3", "Operating System :: OS Independent"]
+
+[project.urls]
+Documentation = "https://docs.usebench.ai/sdk/python"
+Repository = "https://github.com/trybench/bench-sdk"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+bench_sdk = ["py.typed"]

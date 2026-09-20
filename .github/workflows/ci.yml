@@ -1,0 +1,67 @@
+name: CI
+on:
+  pull_request:
+  push:
+    branches: [dev, main]
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - run: npm run typecheck
+      - run: npm test
+      - run: node examples/typescript/simulate-refund.mjs
+      - run: npm pack --dry-run
+  python:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python: ['3.10', '3.x']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '${{ matrix.python }}'
+      - run: python -m pip install build twine ./python
+      - run: python -m unittest discover -s python/tests -v
+      - run: python python/examples/simulate_refund.py
+      - run: python -m build python
+      - run: python -m twine check python/dist/*
+  go:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        go: ['1.22', 'stable']
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: '${{ matrix.go }}'
+          cache: false
+      - run: go test -race ./...
+        working-directory: go
+      - run: go run ./examples/refund
+        working-directory: go
+      - run: go vet ./...
+        working-directory: go
+  rust:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        rust: ['1.88.0', 'stable']
+    steps:
+      - uses: actions/checkout@v4
+      - run: rustup toolchain install '${{ matrix.rust }}' --profile minimal --component clippy,rustfmt
+      - run: cargo +${{ matrix.rust }} test --locked
+        working-directory: rust
+      - run: cargo +${{ matrix.rust }} clippy --locked --all-targets -- -D warnings
+        working-directory: rust
+      - run: cargo +${{ matrix.rust }} run --locked --example refund
+        working-directory: rust
+      - run: cargo +${{ matrix.rust }} package --locked
+        working-directory: rust
