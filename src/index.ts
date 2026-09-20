@@ -2,6 +2,7 @@ import { simulateSystem, type SimulationOptions } from './simulation.js';
 export type { SimulationOptions, SimulationSession, SimulationInput } from './simulation.js';
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomBytes } from "node:crypto";
+import { isIP } from "node:net";
 import { scoreSystemCase, systemReport, validateSystemOptions, type SystemEvaluationOptions, type SystemEvaluationReport } from './system-evaluation.js';
 export * from './system-evaluation.js';
 
@@ -37,16 +38,30 @@ export interface Span {
  attributes: Record<string, unknown>; input_value?: string; output_value?: string; model_name?: string;
 }
 interface Trace { trace_id: string; source: "bench_sdk"; spans: Span[] }
-const sensitiveKey = /authorization|cookie|password|secret|token|api.?key|email|phone|address|user.?id/i;
+const sensitiveKey = /authorization|cookie|password|secret|token|api.?key|email|phone|address|user.?id|(?:first|last|full).?name|card.?number/i;
 const allowedMetadata = /^(code\.(filepath|lineno)|gen_ai\.(system|operation\.name|usage\.(input_tokens|output_tokens))|bench\.(component_id|environment|prompt_version))$/;
+function cardChecksum(digits: string): boolean {
+ const sum = [...digits].reverse().map(Number).reduce((sum,n,i) => sum + (i % 2 ? n * 2 - (n > 4 ? 9 : 0) : n), 0);
+ return sum > 0 && sum % 10 === 0;
+}
 function redact(value: unknown, depth = 0, maxItems = 100): unknown {
  if (depth > 12) return "[DEPTH_LIMIT]";
- if (typeof value === "string") return value
+ if (typeof value === "string") {
+  if (/^[\s]*[\[{]/.test(value)) {
+   try { return JSON.stringify(redact(JSON.parse(value), depth + 1, maxItems)).slice(0,16000) } catch { /* Plain text still receives pattern filtering. */ }
+  }
+  return value
   .replace(/(?:bench_sk_|apikey_|e2b_|sk-)[a-zA-Z0-9_-]{8,}|Bearer\s+[a-zA-Z0-9._~+\/-]+/gi,"[REDACTED_SECRET]")
   .replace(/[a-z0-9.!#$%&'*+\/=?^_`{|}~-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+/gi,"[REDACTED_EMAIL]")
-  .replace(/\+\d[\d ()-]{8,}\d/g,"[REDACTED_PHONE]").slice(0,16000);
+  .replace(/\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b/g, value => isIP(value) === 4 ? '[REDACTED_IP]' : value)
+  .replace(/\b(?:[0-9]{4}(?:[ -][0-9]{4}){3}[ -][0-9]{3}|[0-9]{4}(?:[ -][0-9]{4}){3}|[0-9]{4}[ -][0-9]{6}[ -][0-9]{5}|[0-9]{13,19})\b/g, value => {
+   const digits = value.replace(/[ -]/g, '');
+   return cardChecksum(digits) || (digits.length === 19 && value.length > 19 && cardChecksum(digits.slice(0,16))) ? '[REDACTED_PAYMENT_NUMBER]' : value;
+  }).replace(/\+\d[\d ()-]{8,}\d/g,"[REDACTED_PHONE]").slice(0,16000);
+ }
  if (Array.isArray(value)) return value.slice(0,maxItems).map(v=>redact(v,depth+1,maxItems));
- if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).slice(0,maxItems).map(([k,v])=>[k,sensitiveKey.test(k)&&!(/^gen_ai\.usage\.(input_tokens|output_tokens)$/.test(k)&&typeof v==="number")?"[REDACTED]":redact(v,depth+1,maxItems)]));
+ if (value && typeof value === "object") return Object.fromEntries(Object.entries(value).slice(0,maxItems).map(([k,v])=>[redact(k,depth+1,maxItems),sensitiveKey.test(k)&&!(/^gen_ai\.usage\.(input_tokens|output_tokens)$/.test(k)&&typeof v==="number")?"[REDACTED]":redact(v,depth+1,maxItems)]));
+ if (typeof value === "number" && Number.isInteger(value) && /^[0-9]{13,19}$/.test(String(value)) && (!Number.isSafeInteger(value) || cardChecksum(String(value)))) return "[REDACTED_PAYMENT_NUMBER]";
  if (value === null || ["number","boolean"].includes(typeof value)) return value;
  return undefined;
 }

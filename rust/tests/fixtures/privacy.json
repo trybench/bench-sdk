@@ -1,0 +1,17 @@
+{
+  "input": {
+    "note": "person@example.test +49 151 12345678 192.168.1.2 4242-4242-4242-4242",
+    "suffix": "4242 4242 4242 4242 123",
+    "billing": 4242424242424242,
+    "billing_float": 4242424242424242.0,
+    "billing_exponent": 4.242424242424242e15,
+    "fraction": 1.25,
+    "lookup": {"dynamic@example.test": {"ok": true}},
+    "nested": "{\"full_name\":\"Private Person\"}",
+    "secret": "Bearer synthetic-secret-value",
+    "count": 42,
+    "invalid": "999.999.999.999 reference 4242424242424241"
+  },
+  "forbidden": ["person@example.test", "12345678", "192.168.1.2", "4242-4242", "4242 4242", "4242424242424242", "4.242424242424242", "dynamic@example.test", "Private Person", "synthetic-secret-value"],
+  "preserved": ["999.999.999.999", "4242424242424241", "1.25"]
+}

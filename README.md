@@ -1,4 +1,21 @@
-# Bench SDK (local preview)
+# Bench SDKs
+
+One repository, independently released language packages:
+
+| Language | Package | Source and setup |
+| --- | --- | --- |
+| JavaScript / TypeScript | `@trybench/sdk` | This page; `src/` |
+| Python | `trybench-sdk` (`bench_sdk` import) | [Python guide](python/README.md) |
+| Go | `github.com/trybench/bench-sdk/go` | [Go guide](go/README.md) |
+| Rust | `trybench-sdk` (`trybench_sdk` import) | [Rust guide](rust/README.md) |
+
+All are unpublished previews. Each client supports server tracing, environments,
+nested spans, bounded delivery and default redaction. The JavaScript package
+also includes application evaluation and simulation helpers. Native equivalents
+and automatic framework adapters are coming soon. See [publishing](PUBLISHING.md)
+for independent package releases.
+
+## JavaScript and TypeScript
 
 Capture server-side AI interactions without changing their return values or errors.
 Available on every plan. Trace collection never starts a paid check by itself.
@@ -66,9 +83,8 @@ on a reused process. Delivery is not guaranteed after abrupt process exit.
 
 ## Checks and feedback
 
-The API stores raw traces for 30 days in Postgres. Axiom is not required. This is
-Bench's JSON endpoint, **not OTLP**. Python, browser instrumentation and OTel
-exporter adapters are not included in this preview.
+The API retains accepted, redacted traces for 30 days. This is Bench's JSON
+endpoint. Browser instrumentation and OTLP exporter adapters are not included.
 
 Production checks run as durable background jobs, using pinned prompt criteria.
 They consume one evaluation each and share web/MCP account and key limits.
@@ -76,9 +92,8 @@ Automatic checks require per-component opt-in and a key with a nonzero allowance
 Captured model output is not a reference answer. Review a failure, then add its
 expected behavior to the test library to include it in future benches.
 
-TypeSafe is an optional server-side adapter, not an SDK dependency. Keys and
-provider requests stay in bench-api. No automatic code deployment, policy
-rewrite or promotion of model judgments to golden labels occurs.
+Independent checks run in Bench and require no extra SDK dependency or provider
+key. No automatic code deployment or business-policy rewrite occurs.
 
 The setup skill is at `skills/bench-sdk/SKILL.md`. Documentation is maintained in
 the separate `bench-docs` repository and published at https://docs.usebench.ai/sdk/quickstart.
