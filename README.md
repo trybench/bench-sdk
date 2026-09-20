@@ -1,18 +1,26 @@
-# Bench SDKs
+# Bench SDKs · Beta
 
-One repository, independently released language packages:
+Official clients for [Bench](https://usebench.ai). Record AI applications and
+run repeatable checks on their prompts, tools and resulting state.
 
-| Language | Package | Source and setup |
-| --- | --- | --- |
-| JavaScript / TypeScript | `@benchai/sdk` | This page; `src/` |
-| Python | `trybench-sdk` (`bench_sdk` import) | [Python guide](https://docs.usebench.ai/sdk/python) |
-| Go | `github.com/trybench/bench-sdk/go` | [Go guide](https://docs.usebench.ai/sdk/go) |
-| Rust | `trybench-sdk` (`trybench_sdk` import) | [Rust guide](https://docs.usebench.ai/sdk/rust) |
+**Beta, version 0.1.0.** APIs may evolve. Pin versions and test upgrades in staging.
 
-Each client supports server tracing, environments, nested spans, bounded delivery
-and default redaction. This npm package includes application evaluation and
-scripted simulation helpers. Python, Go and Rust are separate packages with their
-own installation instructions. Automatic framework adapters are coming soon.
+| Language | Install | Guide | Example |
+| --- | --- | --- | --- |
+| TypeScript / JavaScript | `npm install @benchai/sdk` | [TypeScript and JavaScript](https://docs.usebench.ai/sdk/typescript) | [Refund simulation](https://github.com/trybench/bench-sdk/blob/main/examples/typescript/simulate-refund.mjs) |
+| Python | `python -m pip install trybench-sdk` | [Python](https://docs.usebench.ai/sdk/python) | [Refund simulation](https://github.com/trybench/bench-sdk/blob/main/python/examples/simulate_refund.py) |
+| Go | `go get github.com/trybench/bench-sdk/go@v0.1.0` | [Go](https://docs.usebench.ai/sdk/go) | [Refund simulation](https://github.com/trybench/bench-sdk/blob/main/go/examples/refund/main.go) |
+| Rust | `cargo add trybench-sdk` | [Rust](https://docs.usebench.ai/sdk/rust) | [Refund simulation](https://github.com/trybench/bench-sdk/blob/main/rust/examples/refund.rs) |
+
+All four packages support tracing, local application evaluation, scripted
+simulations and explicit report publication. They share a report format and
+privacy contract. Use explicit wrappers for your framework; more automatic
+framework adapters are coming soon.
+
+This repository contains client libraries and local test helpers. Bench's hosted
+scanning, judging, optimization and repair services are separate server software.
+
+[Documentation](https://docs.usebench.ai) · [Releases](https://github.com/trybench/bench-sdk/releases) · [Contributing](https://github.com/trybench/bench-sdk/blob/main/CONTRIBUTING.md) · [Security](https://github.com/trybench/bench-sdk/blob/main/SECURITY.md) · [Apache-2.0](https://github.com/trybench/bench-sdk/blob/main/LICENSE)
 
 ## JavaScript and TypeScript
 

@@ -272,3 +272,34 @@ async fn sampling_and_redactor_failure_do_not_change_app_result() {
     );
     assert_eq!(bench.stats().dropped, 1);
 }
+
+#[tokio::test]
+async fn envelope_names_and_oversized_content_are_filtered() {
+    let server = Server::new();
+    let mut options = server.options();
+    options.system_name = Some("{\"email\":\"person@example.test\",\"password\":\"SYNTHETIC_PRIVATE_VALUE\",\"secret\":\"bench_sk_NOT_A_REAL_SECRET\"}".into());
+    options.capture_content = true;
+    let bench = Bench::new(options).unwrap();
+    let mut span = bench.start_span(
+        None,
+        SpanInput::new("privacy").input(json!("x".repeat(1_000_000))),
+    );
+    span.set_output(json!(true));
+    span.end();
+    bench.shutdown().await;
+    let requests = server.requests.lock().unwrap();
+    let body = &requests[0].1;
+    assert!(!body.contains("person@example.test"));
+    assert!(!body.contains("NOT_A_REAL_SECRET"));
+    assert!(body.contains("[CONTENT_LIMIT]"));
+    assert!(!body.contains("SYNTHETIC_PRIVATE_VALUE"));
+    for branch in [
+        "person@example.test",
+        "bench_sk_NOT_A_REAL_SECRET",
+        "bad\nbranch",
+    ] {
+        let mut options = server.options();
+        options.branch = branch.into();
+        assert!(Bench::new(options).is_err());
+    }
+}

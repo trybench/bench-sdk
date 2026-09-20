@@ -144,3 +144,22 @@ class ClientTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+class PrivacyBudgetTests(unittest.TestCase):
+    def test_bounded_content_envelope_and_identity(self):
+        import time
+        bodies = []
+        client = Bench(api_key='bench_sk_synthetic_test_key', repository='fixture/python', branch='main',
+                       system_name='person@example.test bench_sk_NOT_A_REAL_SECRET', capture_content=True,
+                       transport=lambda url, headers, body, timeout: (bodies.append(body), 201)[1])
+        started = time.monotonic()
+        with client.trace('privacy', input='x' * 1000000) as span:
+            span.set_output('x' * 16000)
+        client.shutdown()
+        self.assertLess(time.monotonic() - started, 1)
+        self.assertNotIn(b'person@example.test', bodies[0])
+        self.assertNotIn(b'NOT_A_REAL_SECRET', bodies[0])
+        self.assertIn(b'[CONTENT_LIMIT]', bodies[0])
+        for branch in ['person@example.test', 'bench_sk_NOT_A_REAL_SECRET', 'bad\nbranch']:
+            with self.assertRaises(ValueError):
+                Bench(api_key='bench_sk_synthetic_test_key', repository='fixture/python', branch=branch)

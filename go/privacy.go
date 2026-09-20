@@ -19,6 +19,9 @@ var ipPattern = regexp.MustCompile(`\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b`)
 var cardPattern = regexp.MustCompile(`\b(?:[0-9]{4}(?:[ -][0-9]{4}){3}[ -][0-9]{3}|[0-9]{4}(?:[ -][0-9]{4}){3}|[0-9]{4}[ -][0-9]{6}[ -][0-9]{5}|[0-9]{13,19})\b`)
 
 func redactText(s string) string {
+	if len(s) > 16000 {
+		return "[CONTENT_LIMIT]"
+	}
 	s = secretPattern.ReplaceAllString(s, "[REDACTED_SECRET]")
 	s = emailPattern.ReplaceAllString(s, "[REDACTED_EMAIL]")
 	s = ipPattern.ReplaceAllStringFunc(s, func(v string) string {
@@ -70,6 +73,9 @@ func scrubLimit(value any, depth, maxItems int) any {
 		}
 		return v
 	case string:
+		if len(v) > 16000 {
+			return "[CONTENT_LIMIT]"
+		}
 		text := strings.TrimSpace(v)
 		if strings.HasPrefix(text, "{") || strings.HasPrefix(text, "[") {
 			var inner any

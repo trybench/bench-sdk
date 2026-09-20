@@ -1,11 +1,12 @@
-# Bench Go SDK
+# Bench Go SDK · Beta
+
+**Beta, version 0.1.0.** Pin versions and test upgrades in staging.
 
 Trace Go applications, agents and tools. Go 1.22+. Standard library only. Apache-2.0.
-This is an unpublished preview. In your test application's `go.mod`, use:
+Install the public Go module:
 
-```go
-require github.com/trybench/bench-sdk/go v0.0.0
-replace github.com/trybench/bench-sdk/go => /absolute/path/to/bench-sdk/go
+```sh
+go get github.com/trybench/bench-sdk/go@v0.1.0
 ```
 
 ```go

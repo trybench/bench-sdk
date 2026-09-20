@@ -26,6 +26,9 @@ pub fn metadata(key: &str) -> bool {
     METADATA.is_match(key)
 }
 pub fn text(value: &str) -> String {
+    if value.len() > 16000 {
+        return "[CONTENT_LIMIT]".into();
+    }
     let value = SECRET.replace_all(value, "[REDACTED_SECRET]");
     let value = EMAIL.replace_all(&value, "[REDACTED_EMAIL]");
     let value = IP.replace_all(&value, |c: &regex::Captures| {
@@ -104,6 +107,9 @@ pub(crate) fn redact_limit(value: Value, depth: usize, max_items: usize) -> Valu
             }
         }
         Value::String(s) => {
+            if s.len() > 16000 {
+                return Value::String("[CONTENT_LIMIT]".into());
+            }
             if s.trim_start().starts_with(['{', '[']) {
                 if let Ok(v) = serde_json::from_str::<Value>(&s) {
                     return Value::String(

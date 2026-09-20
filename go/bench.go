@@ -56,14 +56,15 @@ type trace struct {
 }
 type Stats struct{ Queued, Dropped int }
 type Client struct {
-	options     Options
-	endpoint    string
-	http        *http.Client
-	sample      float64
-	mu, sending sync.Mutex
-	queue       []trace
-	dropped     int
-	closed      bool
+	options  Options
+	endpoint string
+	http     *http.Client
+	sample   float64
+	mu       sync.Mutex
+	sending  chan struct{}
+	queue    []trace
+	dropped  int
+	closed   bool
 }
 type contextKey struct{ client *Client }
 type traceContext struct {
@@ -86,6 +87,14 @@ type Span struct {
 func New(options Options) (*Client, error) {
 	if !strings.HasPrefix(options.APIKey, "bench_sk_") || options.Repository == "" || options.Branch == "" {
 		return nil, errors.New("a Bench key, repository and branch are required")
+	}
+	if !regexp.MustCompile(`^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$`).MatchString(options.Repository) {
+		return nil, errors.New("repository must have the form owner/repo")
+	}
+	for _, value := range []string{options.Repository, options.Branch} {
+		if len(value) > 200 || strings.IndexFunc(value, func(r rune) bool { return r < 32 || r == 127 }) >= 0 || scrub(value, 0) != value {
+			return nil, errors.New("repository and branch must not contain personal information or secrets")
+		}
 	}
 	if options.Endpoint == "" {
 		options.Endpoint = "https://api.trybench.ai"
@@ -114,7 +123,8 @@ func New(options Options) (*Client, error) {
 		parts := strings.Split(options.Repository, "/")
 		options.SystemName = parts[len(parts)-1]
 	}
-	return &Client{options: options, endpoint: strings.TrimRight(options.Endpoint, "/") + "/api/traces", sample: sample, http: &http.Client{Transport: options.Transport, Timeout: options.Timeout, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil
+	options.SystemName = scrub(options.SystemName, 0).(string)
+	return &Client{sending: make(chan struct{}, 1), options: options, endpoint: strings.TrimRight(options.Endpoint, "/") + "/api/traces", sample: sample, http: &http.Client{Transport: options.Transport, Timeout: options.Timeout, CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }}}, nil
 }
 func id(n int) string {
 	b := make([]byte, n)
@@ -307,8 +317,12 @@ func (c *Client) Stats() Stats {
 // Flush sends the currently queued batch. New events wait for the next flush.
 // Network failures are counted and reported, without changing app return values.
 func (c *Client) Flush(ctx context.Context) {
-	c.sending.Lock()
-	defer c.sending.Unlock()
+	select {
+	case c.sending <- struct{}{}:
+	case <-ctx.Done():
+		return
+	}
+	defer func() { <-c.sending }()
 	c.mu.Lock()
 	pending := c.queue
 	c.queue = nil

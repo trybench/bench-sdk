@@ -16,7 +16,10 @@
   "files": [
     "dist",
     "README.md",
-    "skills"
+    "skills",
+    "examples/typescript",
+    "CHANGELOG.md",
+    "SECURITY.md"
   ],
   "scripts": {
     "build": "tsc",

@@ -111,12 +111,41 @@ pub struct Bench {
 }
 
 impl Bench {
-    pub fn new(options: Options) -> Result<Self, String> {
+    pub fn new(mut options: Options) -> Result<Self, String> {
+        options.system_name = options.system_name.map(|name| {
+            privacy::redact(Value::String(name), 0)
+                .as_str()
+                .unwrap_or("[REDACTED]")
+                .to_owned()
+        });
         if !options.api_key.starts_with("bench_sk_")
             || options.repository.is_empty()
             || options.branch.is_empty()
         {
             return Err("A Bench key, repository and branch are required.".into());
+        }
+        let parts: Vec<_> = options.repository.split('/').collect();
+        if parts.len() != 2
+            || parts.iter().any(|part| {
+                part.is_empty()
+                    || !part
+                        .bytes()
+                        .all(|b| b.is_ascii_alphanumeric() || b"_.-".contains(&b))
+            })
+        {
+            return Err("Repository must have the form owner/repo.".into());
+        }
+        for value in [&options.repository, &options.branch] {
+            if value.len() > 200
+                || value.chars().any(char::is_control)
+                || privacy::redact(Value::String(value.to_string()), 0)
+                    != Value::String(value.to_string())
+            {
+                return Err(
+                    "Repository and branch must not contain personal information or secrets."
+                        .into(),
+                );
+            }
         }
         let url = reqwest::Url::parse(&options.endpoint).map_err(|_| "Invalid endpoint.")?;
         if url.host_str().is_none()

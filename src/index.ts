@@ -47,12 +47,13 @@ function cardChecksum(digits: string): boolean {
 function redact(value: unknown, depth = 0, maxItems = 100): unknown {
  if (depth > 12) return "[DEPTH_LIMIT]";
  if (typeof value === "string") {
+  if (value.length > 16000) return "[CONTENT_LIMIT]";
   if (/^[\s]*[\[{]/.test(value)) {
    try { return JSON.stringify(redact(JSON.parse(value), depth + 1, maxItems)).slice(0,16000) } catch { /* Plain text still receives pattern filtering. */ }
   }
   return value
   .replace(/(?:bench_sk_|apikey_|e2b_|sk-)[a-zA-Z0-9_-]{8,}|Bearer\s+[a-zA-Z0-9._~+\/-]+/gi,"[REDACTED_SECRET]")
-  .replace(/[a-z0-9.!#$%&'*+\/=?^_`{|}~-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+/gi,"[REDACTED_EMAIL]")
+  .replace(/(?<![a-z0-9.!#$%&'*+\/=?^_`{|}~-])[a-z0-9.!#$%&'*+\/=?^_`{|}~-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+/gi,"[REDACTED_EMAIL]")
   .replace(/\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b/g, value => isIP(value) === 4 ? '[REDACTED_IP]' : value)
   .replace(/\b(?:[0-9]{4}(?:[ -][0-9]{4}){3}[ -][0-9]{3}|[0-9]{4}(?:[ -][0-9]{4}){3}|[0-9]{4}[ -][0-9]{6}[ -][0-9]{5}|[0-9]{13,19})\b/g, value => {
    const digits = value.replace(/[ -]/g, '');
@@ -80,6 +81,7 @@ export class Bench {
   if (typeof window !== "undefined") throw new Error("Bench API keys must stay on the server.");
   if (!options.apiKey.startsWith("bench_sk_")) throw new Error("A Bench API key is required.");
   if (!options.repository || !options.branch) throw new Error("repository and branch are required.");
+  if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(options.repository) || [options.repository,options.branch].some(value=>value.length>200 || /[\x00-\x1f\x7f]/.test(value) || redact(value)!==value)) throw new Error("Use static repository and branch names without personal data or secrets.");
   if (options.environment !== undefined && !/^[a-zA-Z0-9_.-]{1,64}$/.test(options.environment)) throw new Error("environment must be a short deployment name.");
   const endpoint = new URL(options.endpoint ?? "https://api.trybench.ai");
   if (endpoint.username || endpoint.password || endpoint.search || endpoint.hash || (endpoint.protocol !== "https:" && !(endpoint.protocol === "http:" && ["localhost","127.0.0.1","[::1]"].includes(endpoint.hostname)))) throw new Error("Use HTTPS or a loopback HTTP endpoint.");
@@ -211,7 +213,7 @@ export class Bench {
   while(this.queue.length){
    const batch:Trace[]=[];let bytes=0;
    while(this.queue.length&&batch.length<20){const size=Buffer.byteLength(JSON.stringify(this.queue[0]));if(bytes+size>800000)break;bytes+=size;batch.push(this.queue.shift()!)}
-   const body=JSON.stringify({repo_full_name:this.options.repository,branch:this.options.branch,system_name:this.options.systemName??this.options.repository.split('/').pop(),capture_content:this.options.captureContent??false,traces:batch});
+   const body=JSON.stringify({repo_full_name:this.options.repository,branch:this.options.branch,system_name:redact(this.options.systemName??this.options.repository.split('/').pop()),capture_content:this.options.captureContent??false,traces:batch});
    let delivered=false;
    for(let attempt=0;attempt<2;attempt++){
     try{

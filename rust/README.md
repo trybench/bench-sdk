@@ -1,4 +1,6 @@
-# Bench Rust SDK
+# Bench Rust SDK · Beta
+
+**Beta, version 0.1.0.** Pin versions and test upgrades in staging.
 
 Trace Rust applications, agents and tools. Tokio applications, Rust 1.88+.
 Apache-2.0. Add the public crate to your application:

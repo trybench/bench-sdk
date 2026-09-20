@@ -1,4 +1,6 @@
-# Bench Python SDK
+# Bench Python SDK · Beta
+
+**Beta, version 0.1.0.** Pin versions and test upgrades in staging.
 
 Trace Python applications, agents and tools without changing their behavior.
 Python 3.10+. No third-party runtime dependencies. Apache-2.0.

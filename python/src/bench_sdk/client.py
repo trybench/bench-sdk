@@ -19,7 +19,7 @@ from urllib.parse import urlsplit
 _SENSITIVE = re.compile(r"authorization|cookie|password|secret|token|api.?key|email|phone|address|user.?id|(?:first|last|full).?name|card.?number", re.I)
 _METADATA = re.compile(r"^(code\.(filepath|lineno)|gen_ai\.(system|provider\.name|operation\.name|request\.model|response\.model|tool\.(name|type|call\.id)|usage\.(input_tokens|output_tokens))|bench\.(component_id|environment|prompt_version|duration_ms|cost\.(usd|source|pricing_version)))$")
 _SECRETS = re.compile(r"(?:bench_sk_|apikey_|sk-)[a-zA-Z0-9_-]{8,}|Bearer\s+[a-zA-Z0-9._~+/-]+", re.I)
-_EMAIL = re.compile(r"[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+", re.I)
+_EMAIL = re.compile(r"(?<![a-z0-9.!#$%&'*+/=?^_`{|}~-])[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+", re.I)
 _PHONE = re.compile(r"\+\d[\d ()-]{8,}\d")
 _IP = re.compile(r"\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b")
 _CARD = re.compile(r"\b(?:[0-9]{4}(?:[ -][0-9]{4}){3}[ -][0-9]{3}|[0-9]{4}(?:[ -][0-9]{4}){3}|[0-9]{4}[ -][0-9]{6}[ -][0-9]{5}|[0-9]{13,19})\b")
@@ -50,6 +50,8 @@ def _redact(value: Any, depth: int = 0, max_items: int = 100) -> Any:
     if depth > 12:
         return "[DEPTH_LIMIT]"
     if isinstance(value, str):
+        if len(value) > 16000:
+            return "[CONTENT_LIMIT]"
         # Encoded JSON must receive the same field filtering as an object.
         if value.lstrip().startswith(("{", "[")):
             try:
@@ -110,6 +112,8 @@ class Bench:
                  transport: Callable[[str, dict[str, str], bytes, float], int] | None = None):
         if not api_key.startswith("bench_sk_") or not repository or not branch:
             raise ValueError("A Bench key, repository and branch are required.")
+        if not re.fullmatch(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+", repository) or any(len(v) > 200 or re.search(r"[\x00-\x1f\x7f]", v) or _redact(v) != v for v in (repository, branch)):
+            raise ValueError("Use static repository and branch names without personal data or secrets.")
         parsed = urlsplit(endpoint)
         if not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment or not (parsed.scheme == "https" or (parsed.scheme == "http" and parsed.hostname in ("localhost", "127.0.0.1", "::1"))):
             raise ValueError("Use HTTPS or a loopback HTTP endpoint.")
@@ -118,7 +122,7 @@ class Bench:
         if not 0 <= sample_rate <= 1 or type(max_queue_size) is not int or not 1 <= max_queue_size <= 2000 or not 0.1 <= timeout <= 30:
             raise ValueError("Sampling, queue size or timeout is out of range.")
         self._key, self._repository, self._branch = api_key, repository, branch
-        self._system, self._environment = system_name or repository.rsplit("/", 1)[-1], environment
+        self._system, self._environment = _redact(system_name or repository.rsplit("/", 1)[-1]), environment
         self._endpoint, self._capture, self._sample = endpoint.rstrip("/") + "/api/traces", capture_content, sample_rate
         self._max, self._timeout, self._redactor, self._on_error = max_queue_size, timeout, redact, on_error
         self._transport = transport or self._http
