@@ -91,3 +91,36 @@ test('publishing runtime evidence is explicit and preserves suite coverage', asy
   assert.equal(JSON.stringify(sent[0]).includes('person@example.com'),false);
   await bench.shutdown();
 });
+
+test('scripted users expose duplicate tool effects hidden by an identical final answer', async () => {
+  const bench = new Bench({apiKey:'bench_sk_test',repository:'test/refunds',branch:'dev',sampleRate:0});
+  const cases = [{id:'repeat-request',split:'incident',businessOutcome:'Refund the eligible order exactly once',input:{initialState:{refundedCents:0},turns:['Refund order A','Did it work? Please refund order A.']},expectedOutput:'Refunded $120',expectedState:{refundedCents:12000}}];
+  let closed=0;
+  const session=(fixed)=>async(initial)=>{
+    let state=structuredClone(initial);
+    return {
+      turn:()=>bench.trace({name:'refund',kind:'TOOL'},()=>{if(!fixed || !state.refundedCents)state.refundedCents+=12000;return 'Refunded $120'}),
+      observe:()=>state,
+      close:()=>{closed++;state.refundedCents=0},
+    };
+  };
+  const options={sourceRevision:'a'.repeat(40),contextRevision:'refund-policy-v1',cases};
+  const bad=await bench.simulateSystem({...options,createSession:session(false)});
+  const good=await bench.simulateSystem({...options,sourceRevision:'b'.repeat(40),createSession:session(true)});
+  assert.equal(bad.cases[0].checks.find(c=>c.id==='expected-output').passed,true);
+  assert.equal(bad.cases[0].checks.find(c=>c.id==='expected-state').passed,false);
+  assert.equal(bad.cases[0].observedState.refundedCents,24000);
+  assert.equal(good.cases[0].observedState.refundedCents,12000);
+  assert.equal(good.summary.score,100);
+  assert.equal(bad.suite_hash,good.suite_hash);
+  assert.equal(closed,2);
+  await bench.shutdown();
+});
+
+test('missing state observation is incomplete even when the final response matches',async()=>{
+ const bench=new Bench({apiKey:'bench_sk_test',repository:'test/refunds',branch:'dev'});
+ const report=await bench.evaluateSystem({sourceRevision:'a'.repeat(40),contextRevision:'v1',cases:[{id:'state',input:1,expectedOutput:'done',expectedState:{refunded:true}}],run:()=> 'done'});
+ assert.equal(report.summary.status,'incomplete');
+ assert.equal(report.summary.score,null);
+ await bench.shutdown();
+});

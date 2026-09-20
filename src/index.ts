@@ -1,3 +1,5 @@
+import { simulateSystem, type SimulationOptions } from './simulation.js';
+export type { SimulationOptions, SimulationSession, SimulationInput } from './simulation.js';
 import { AsyncLocalStorage } from "node:async_hooks";
 import { randomBytes } from "node:crypto";
 import { scoreSystemCase, systemReport, validateSystemOptions, type SystemEvaluationOptions, type SystemEvaluationReport } from './system-evaluation.js';
@@ -130,29 +132,42 @@ export class Bench {
    const controller = new AbortController();
    let timer: ReturnType<typeof setTimeout> | undefined;
    let output: unknown;
+   let observedState: unknown;
    let failure: string | undefined;
    const aborted = () => controller.abort();
    options.signal?.addEventListener('abort', aborted, {once:true});
    try {
-    output = await Promise.race([
-     this.storage.run({traceId:randomBytes(16).toString('hex'),spanId:'',sampled:true,evaluation}, () => this.trace({name:'system-entrypoint',kind:'AGENT',input:structuredClone(item.input)}, () => options.run(structuredClone(item.input),{caseId:item.id,signal:controller.signal}))),
+    const execution = await Promise.race([
+     (async () => {
+      const value = await this.storage.run({traceId:randomBytes(16).toString('hex'),spanId:'',sampled:true,evaluation}, () => this.trace({name:'system-entrypoint',kind:'AGENT',input:structuredClone(item.input)}, () => options.run(structuredClone(item.input),{caseId:item.id,signal:controller.signal})));
+      if(controller.signal.aborted)throw new Error('Stopped');
+      const state = options.observe ? await options.observe({caseId:item.id,signal:controller.signal}) : undefined;
+      return {value,state};
+     })(),
      new Promise<never>((_,reject) => {
       controller.signal.addEventListener('abort',()=>reject(new Error('Application evaluation stopped.')), {once:true});
       timer = setTimeout(()=>controller.abort(), options.timeoutMs ?? 30000);
      }),
     ]);
+    output = execution.value;
+    observedState = execution.state;
    } catch { failure = controller.signal.aborted ? 'Application timed out or was stopped. No complete score.' : 'Application execution failed. Inspect recorded spans.'; }
    finally { evaluation.active=false;clearTimeout(timer);options.signal?.removeEventListener('abort',aborted); }
    if(evaluation.limited)failure='Runtime evidence exceeded its limit or could not be captured. No complete score.';
    if(evaluation.pending){failure='Application returned with unfinished work. Await all tools and model calls before returning.';controller.abort()}
-   const result = scoreSystemCase(item, output, evaluation.spans, failure);
+   const result = scoreSystemCase(item, output, evaluation.spans, failure, observedState);
    result.case_definition = this.safe(item) as typeof item;
    result.output = this.safe(result.output);
+   if (result.observedState !== undefined) result.observedState = this.safe(result.observedState);
    results.push(result);
    // A callback cannot be forcibly killed inside Node. Never start more cases after timeout.
    if(controller.signal.aborted)break;
   }
-  return systemReport(pinned,results);
+  return {...systemReport(pinned,results), environment: this.options.environment ?? 'unspecified'};
+ }
+ /** Replay bounded customer turns against a fresh application session and fixture state. */
+ async simulateSystem<State, Turn, Reply>(options: SimulationOptions<State, Turn, Reply>): Promise<SystemEvaluationReport> {
+  return simulateSystem(options, (evaluation) => this.evaluateSystem(evaluation));
  }
  /** Explicit upload of redacted runtime evidence. Does not run a judge or spend Bench credits. */
  async publishSystemEvaluation(systemId: number, report: SystemEvaluationReport): Promise<{ evaluation: { id: number; ai_system_id: number } }> {

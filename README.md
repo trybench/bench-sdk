@@ -84,3 +84,21 @@ The setup skill is at `skills/bench-sdk/SKILL.md`. Documentation is maintained i
 the separate `bench-docs` repository and published at https://docs.usebench.ai/sdk/quickstart.
 The staging setup can use a commit-pinned Git install from this private repository.
 It requires GitHub repository access. No npm release is implied by that preview.
+
+### Scripted customer simulations
+
+`bench.simulateSystem` runs 1–20 scripted turns per case against a fresh application
+session. Each case provides `input: { initialState, turns }`, `expectedState`, and
+optionally `businessOutcome`, `expectedOutput`, tool assertions and suite split.
+Provide `createSession(initialState, { caseId, signal })` returning `turn(message,
+{ signal, turnIndex })`, `observe()` and `close()` callbacks. Keep your real app and
+tool wrappers; replace external services with test fixtures. `observe` reads the
+fixture's actual state independently of the reply, and `close` resets/releases it.
+
+For single-call tests, `evaluateSystem` also accepts an `observe({ caseId, signal })`
+callback and `expectedState` assertions. Missing state observation produces an
+incomplete result. Reports retain the SDK environment, observed state and business
+outcome alongside the reply and traces. Use unchanged cases and context for baseline
+and candidate comparisons. These are scripted simulations and client-reported
+observations; the SDK does not automatically clone external services or synthesize
+an adaptive customer. See the application testing guide for the complete example.
