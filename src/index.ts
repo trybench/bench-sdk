@@ -18,6 +18,7 @@ export interface BenchOptions {
  repository: string;
  branch: string;
  systemName?: string;
+ environment?: string;
  endpoint?: string;
  captureContent?: boolean;
  sampleRate?: number;
@@ -62,6 +63,7 @@ export class Bench {
   if (typeof window !== "undefined") throw new Error("Bench API keys must stay on the server.");
   if (!options.apiKey.startsWith("bench_sk_")) throw new Error("A Bench API key is required.");
   if (!options.repository || !options.branch) throw new Error("repository and branch are required.");
+  if (options.environment !== undefined && !/^[a-zA-Z0-9_.-]{1,64}$/.test(options.environment)) throw new Error("environment must be a short deployment name.");
   const endpoint = new URL(options.endpoint ?? "https://api.trybench.ai");
   if (endpoint.username || endpoint.password || endpoint.search || endpoint.hash || (endpoint.protocol !== "https:" && !(endpoint.protocol === "http:" && ["localhost","127.0.0.1","[::1]"].includes(endpoint.hostname)))) throw new Error("Use HTTPS or a loopback HTTP endpoint.");
   for (const [name,value,min,max] of [["sampleRate",options.sampleRate??1,0,1],["maxQueueSize",options.maxQueueSize??200,1,2000],["flushIntervalMs",options.flushIntervalMs??2000,100,60000],["timeoutMs",options.timeoutMs??5000,100,30000]] as const) {
@@ -79,6 +81,7 @@ export class Bench {
   try {
    const attrs=Object.fromEntries(Object.entries(input.attributes??{}).filter(([key])=>this.options.captureContent||allowedMetadata.test(key)));
    if(input.componentId)attrs["bench.component_id"]=input.componentId;
+   if(this.options.environment)attrs["bench.environment"]=this.options.environment;
    const content=(value:unknown)=>value===undefined?undefined:JSON.stringify(this.safe(value));
    const span:Span={span_id:spanId,parent_span_id:parent,name:String(this.safe(input.name)).slice(0,200),kind:input.kind??"LLM",started_at:new Date(start).toISOString(),ended_at:new Date().toISOString(),status,attributes:this.safe(attrs) as Record<string,unknown>,model_name:input.model?String(this.safe(input.model)).slice(0,200):undefined};
    const evaluation = this.storage.getStore()?.evaluation;
