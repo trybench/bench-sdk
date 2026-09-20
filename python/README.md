@@ -3,8 +3,7 @@
 Trace Python applications, agents and tools without changing their behavior.
 Python 3.10+. No third-party runtime dependencies. Apache-2.0.
 
-This is an unpublished preview. From the SDK checkout, run `python -m pip install ./python`.
-The planned PyPI distribution is `trybench-sdk`; the import is `bench_sdk`.
+Install with `python -m pip install trybench-sdk`. The Python import is `bench_sdk`.
 
 ```python
 import os
@@ -55,10 +54,54 @@ the batch. `bench.stats` reports queued and dropped spans. `on_error(message)`
 receives a fixed message, without content or keys. A telemetry failure does not
 replace an application exception. This is a bounded queue, not durable storage.
 
-This package supports tracing. The JavaScript package currently also provides
-application evaluation and scripted simulation helpers. Native Python helpers
-and automatic framework adapters are planned; tracing does not imply those helpers
-are available here.
+## Test your application
+
+`await bench.evaluate_system(...)` calls your application's request handler with
+pinned cases. It captures the real nested tool/model traces, compares the final
+output and independently observed state, and returns a redacted report locally.
+Use a test database and test service credentials.
+
+```python
+report = await bench.evaluate_system(
+    source_revision=os.environ["GIT_COMMIT_SHA"],  # Full 40-character commit SHA
+    context_revision="refund-policy-v1",
+    cases=[{
+        "id": "outside-refund-policy", "split": "regression",
+        "input": {"days": 45}, "expected_output": {"refunded": False},
+        "forbidden_tools": ["issue-refund"],
+    }],
+    run=lambda request, context: handle_request(request),
+)
+assert report["summary"]["status"] == "completed"
+assert all(case["status"] == "passed" for case in report["cases"])
+# Explicit upload, only when you want this report saved in Bench:
+await bench.publish_system_evaluation(int(os.environ["BENCH_SYSTEM_ID"]), report)
+```
+
+`run(input, context)` and `observe(context)` may be synchronous or asynchronous.
+When a case has `expected_state`, supply `observe` to read the authoritative test
+state. Context provides `case_id`, `cancelled`, `signal`, `deadline` and
+`raise_if_cancelled()`. Inputs are JSON snapshots; changes inside the application
+do not change the case's assertions.
+
+`await bench.simulate_system(...)` accepts the same revisions and cases, plus
+`create_session(initial_state, context)`. Cases use
+`input={"initial_state": {...}, "turns": [...]}` and require `expected_state`.
+Return an object with `turn(message, context)`, `observe()` and `close()` methods.
+A fresh session receives 1 to 20 scripted customer turns. Bench snapshots observed
+state before closing the session. `context.turn_index` identifies the turn.
+
+Both helpers use a 30-second timeout per case, configurable with `timeout` up to
+300 seconds. Pass a `threading.Event` as `cancel_event` to stop the suite. Missing
+assertions, missing state, unfinished traces and timeouts remain incomplete.
+Callbacks must honor cancellation; Python cannot forcibly stop a synchronous
+thread. Await all child work and isolate external side effects. These helpers
+are local execution, not a process sandbox or a hosted verification claim.
+
+Tests record redacted content even when production capture is metadata-only, so
+use synthetic inputs. Reports are not uploaded and paid checks are not started
+unless you take a separate explicit action. Automatic framework adapters are
+coming soon.
 
 Run checks from this directory:
 
@@ -70,3 +113,25 @@ python -m twine check dist/*
 
 See [Bench documentation](https://docs.usebench.ai/sdk/python) and the repository's
 [publishing guide](../PUBLISHING.md).
+
+## Latency, tool calls and cost
+
+Every recorded call carries start/end timestamps, status, parent span ID and an
+automatically measured `bench.duration_ms` from a monotonic clock. Wrap each tool
+execution, including retries, with a TOOL span to retain its individual timing.
+Use `gen_ai.operation.name=execute_tool` and `gen_ai.tool.name` for tool identity.
+Production sampling can omit traces; a rate of 1 records each instrumented call.
+The bounded delivery queue is not a guarantee against network or process loss.
+
+Add `gen_ai.provider.name`, `gen_ai.request.model`, `gen_ai.response.model`,
+`gen_ai.usage.input_tokens` and `gen_ai.usage.output_tokens` when your provider
+returns them. Add `bench.cost.usd` for the cost of that individual call and
+`bench.cost.source` as `reported` or `estimated`. For estimates, also include
+`bench.cost.pricing_version`. These fields survive metadata-only capture, so you
+can measure usage without recording prompts or responses. Missing cost is unknown,
+not zero. Do not repeat a child cost on its parent or count overlapping token
+categories twice. The SDK does not guess provider prices or a tool's own charges.
+
+The `gen_ai.*` names follow selected OpenTelemetry conventions. `bench.cost.*` and
+`bench.duration_ms` are Bench extensions. Events currently use Bench JSON over
+HTTPS; this release is not an OTLP exporter or collector.

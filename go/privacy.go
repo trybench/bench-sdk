@@ -11,7 +11,7 @@ import (
 )
 
 var sensitive = regexp.MustCompile(`(?i)authorization|cookie|password|secret|token|api.?key|email|phone|address|user.?id|(?:first|last|full).?name|card.?number`)
-var metadata = regexp.MustCompile(`^(code\.(filepath|lineno)|gen_ai\.(system|operation\.name|usage\.(input_tokens|output_tokens))|bench\.(component_id|environment|prompt_version))$`)
+var metadata = regexp.MustCompile(`^(code\.(filepath|lineno)|gen_ai\.(system|provider\.name|operation\.name|request\.model|response\.model|tool\.(name|type|call\.id)|usage\.(input_tokens|output_tokens))|bench\.(component_id|environment|prompt_version|duration_ms|cost\.(usd|source|pricing_version)))$`)
 var secretPattern = regexp.MustCompile(`(?i)(?:bench_sk_|apikey_|sk-)[a-zA-Z0-9_-]{8,}|Bearer\s+[a-zA-Z0-9._~+/-]+`)
 var emailPattern = regexp.MustCompile("(?i)[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9-]+(?:\\.[a-z0-9-]+)+")
 var phonePattern = regexp.MustCompile(`\+\d[\d ()-]{8,}\d`)
@@ -58,7 +58,8 @@ func limitText(s string, max int) string {
 	}
 	return s
 }
-func scrub(value any, depth int) any {
+func scrub(value any, depth int) any { return scrubLimit(value, depth, 100) }
+func scrubLimit(value any, depth, maxItems int) any {
 	if depth > 12 {
 		return "[DEPTH_LIMIT]"
 	}
@@ -75,7 +76,7 @@ func scrub(value any, depth int) any {
 			dec := json.NewDecoder(strings.NewReader(v))
 			dec.UseNumber()
 			if json.Valid([]byte(v)) && dec.Decode(&inner) == nil {
-				encoded, _ := json.Marshal(scrub(inner, depth+1))
+				encoded, _ := json.Marshal(scrubLimit(inner, depth+1, maxItems))
 				return limitText(string(encoded), 16000)
 			}
 		}
@@ -84,7 +85,7 @@ func scrub(value any, depth int) any {
 		out := map[string]any{}
 		n := 0
 		for k, item := range v {
-			if n >= 100 {
+			if n >= maxItems {
 				break
 			}
 			n++
@@ -92,17 +93,17 @@ func scrub(value any, depth int) any {
 			if sensitive.MatchString(k) && !(strings.HasPrefix(k, "gen_ai.usage.") && metadata.MatchString(k) && number) {
 				out[redactText(k)] = "[REDACTED]"
 			} else {
-				out[redactText(k)] = scrub(item, depth+1)
+				out[redactText(k)] = scrubLimit(item, depth+1, maxItems)
 			}
 		}
 		return out
 	case []any:
-		if len(v) > 100 {
-			v = v[:100]
+		if len(v) > maxItems {
+			v = v[:maxItems]
 		}
 		out := make([]any, len(v))
 		for i, item := range v {
-			out[i] = scrub(item, depth+1)
+			out[i] = scrubLimit(item, depth+1, maxItems)
 		}
 		return out
 	default:

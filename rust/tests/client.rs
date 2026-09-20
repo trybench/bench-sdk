@@ -1,4 +1,5 @@
 use serde_json::{json, Value};
+use std::time::Duration;
 use std::{
     io::{BufRead, BufReader, Read, Write},
     net::{TcpListener, TcpStream},
@@ -200,7 +201,20 @@ async fn metadata_retry_queue_and_redirect_contract() {
         input
             .attributes
             .insert("gen_ai.usage.input_tokens".into(), json!(42));
+        input
+            .attributes
+            .insert("gen_ai.tool.name".into(), json!("search"));
+        input
+            .attributes
+            .insert("bench.cost.usd".into(), json!(0.002));
+        input
+            .attributes
+            .insert("bench.cost.source".into(), json!("reported"));
+        input
+            .attributes
+            .insert("bench.duration_ms".into(), json!(-1));
         let mut span = bench.start_span(None, input);
+        tokio::time::sleep(Duration::from_millis(5)).await;
         span.set_output(json!("no-output"));
         span.end();
     }
@@ -213,6 +227,12 @@ async fn metadata_retry_queue_and_redirect_contract() {
         assert!(!requests[0].1.contains("do-not-capture"));
         assert!(!requests[0].1.contains("private"));
         assert!(requests[0].1.contains("\"gen_ai.usage.input_tokens\":42"));
+        let batch: Value = serde_json::from_str(&requests[0].1).unwrap();
+        let attrs = &batch["traces"][0]["spans"][0]["attributes"];
+        assert_eq!(attrs["bench.cost.usd"], json!(0.002));
+        assert_eq!(attrs["bench.cost.source"], "reported");
+        assert_eq!(attrs["gen_ai.tool.name"], "search");
+        assert!(attrs["bench.duration_ms"].as_f64().unwrap() >= 1.0);
     }
     server.status.store(302, Ordering::SeqCst);
     let mut span = bench.start_span(None, SpanInput::new("redirect"));

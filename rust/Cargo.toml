@@ -3,7 +3,7 @@ name = "trybench-sdk"
 version = "0.1.0"
 edition = "2021"
 rust-version = "1.88"
-description = "Server-side tracing for Bench"
+description = "Trace AI applications and test their behavior with Bench"
 license = "Apache-2.0"
 repository = "https://github.com/trybench/bench-sdk"
 documentation = "https://docs.usebench.ai/sdk/rust"
@@ -11,12 +11,13 @@ readme = "README.md"
 include = ["src/**", "tests/**", "README.md", "LICENSE", "Cargo.toml"]
 
 [dependencies]
+sha2 = "0.10"
 chrono = { version = "0.4", default-features = false, features = ["clock"] }
 regex = "1"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-tokio = { version = "1", features = ["time", "sync"] }
+tokio = { version = "1", features = ["time", "sync", "rt"] }
 uuid = { version = "1", features = ["v4"] }
 
 [dev-dependencies]

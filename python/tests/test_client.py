@@ -39,7 +39,10 @@ class ClientTests(unittest.TestCase):
         row = body["traces"][0]["spans"][0]
         self.assertNotIn("input_value", row)
         self.assertNotIn("output_value", row)
-        self.assertEqual(row["attributes"], {"bench.environment": "staging", "gen_ai.usage.input_tokens": 42})
+        self.assertEqual(row["attributes"]["bench.environment"], "staging")
+        self.assertEqual(row["attributes"]["gen_ai.usage.input_tokens"], 42)
+        self.assertGreaterEqual(row["attributes"]["bench.duration_ms"], 0)
+        self.assertEqual(len(row["attributes"]), 3)
         self.assertNotIn("customer", str(body))
 
     def test_nested_concurrent_tasks_keep_the_correct_parent(self):

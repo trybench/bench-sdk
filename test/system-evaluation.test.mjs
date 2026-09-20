@@ -124,3 +124,20 @@ test('missing state observation is incomplete even when the final response match
  assert.equal(report.summary.score,null);
  await bench.shutdown();
 });
+
+test('state observation stays inside the application trace and never uploads implicitly', async () => {
+ const sent = [];
+ const bench = new Bench({apiKey:'bench_sk_test',repository:'test/refunds',branch:'dev',fetch:async (...args)=>{sent.push(args);return new Response('{}',{status:201})}});
+ const report = await bench.evaluateSystem({
+  sourceRevision:'a'.repeat(40),contextRevision:'v1',
+  cases:[{id:'ledger',input:1,expectedState:{refunds:1},requiredTools:['read-ledger']}],
+  run:()=> 'done',
+  observe:()=>bench.trace({name:'read-ledger',kind:'TOOL'},()=>({refunds:1})),
+ });
+ await bench.shutdown();
+ const spans = report.cases[0].spans;
+ assert.equal(spans.filter(s=>!s.parent_span_id).length,1);
+ assert.equal(spans.length,2);
+ assert.equal(report.summary.score,100);
+ assert.equal(sent.length,0);
+});

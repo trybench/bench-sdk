@@ -69,6 +69,7 @@ type contextKey struct{ client *Client }
 type traceContext struct {
 	traceID, spanID string
 	sampled         bool
+	evaluation      *evaluationCapture
 }
 type Span struct {
 	client  *Client
@@ -133,7 +134,7 @@ func (c *Client) report(message string) {
 // Call End after SetOutput/SetError. A span that never receives either is an error.
 func (c *Client) StartSpan(ctx context.Context, input SpanInput) (context.Context, *Span) {
 	parent, _ := ctx.Value(contextKey{c}).(traceContext)
-	own := traceContext{traceID: parent.traceID, spanID: id(8), sampled: parent.sampled}
+	own := traceContext{traceID: parent.traceID, spanID: id(8), sampled: parent.sampled, evaluation: parent.evaluation}
 	if own.traceID == "" {
 		own.traceID = id(16)
 		b := make([]byte, 8)
@@ -144,10 +145,14 @@ func (c *Client) StartSpan(ctx context.Context, input SpanInput) (context.Contex
 		}
 		own.sampled = e == nil && (c.sample == 1 || float64(n)/float64(^uint64(0)) < c.sample)
 	}
+	if own.evaluation != nil {
+		own.sampled = true
+		own.evaluation.start()
+	}
 	if input.Kind == "" {
 		input.Kind = "LLM"
 	}
-	s := &Span{client: c, input: input, context: own, parent: parent.spanID, start: time.Now().UTC(), status: "error"}
+	s := &Span{client: c, input: input, context: own, parent: parent.spanID, start: time.Now(), status: "error"}
 	return context.WithValue(ctx, contextKey{c}, own), s
 }
 func (s *Span) SetOutput(value any) {
@@ -198,6 +203,10 @@ func (c *Client) safe(value any) (any, error) {
 	return scrub(decoded, 0), nil
 }
 func (c *Client) capture(s *Span) {
+	var captured *wireSpan
+	if s.context.evaluation != nil {
+		defer func() { s.context.evaluation.finish(captured) }()
+	}
 	// A customer redactor or serialization failure must not mask an app error.
 	defer func() {
 		if recover() != nil {
@@ -217,6 +226,10 @@ func (c *Client) capture(s *Span) {
 		c.drop(1)
 		return
 	}
+	if s.context.evaluation != nil {
+		captured = &row
+		return
+	}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	if c.closed || len(c.queue) >= c.options.MaxQueueSize {
@@ -226,7 +239,7 @@ func (c *Client) capture(s *Span) {
 	c.queue = append(c.queue, t)
 }
 func (c *Client) buildSpan(s *Span) (wireSpan, error) {
-	row := wireSpan{ID: s.context.spanID, Parent: s.parent, Kind: s.input.Kind, Started: s.start, Ended: time.Now().UTC(), Status: s.status}
+	row := wireSpan{ID: s.context.spanID, Parent: s.parent, Kind: s.input.Kind, Started: s.start.UTC(), Ended: time.Now().UTC(), Status: s.status}
 	switch row.Kind {
 	case "LLM", "TOOL", "CHAIN", "AGENT", "RETRIEVER", "EMBEDDING":
 	default:
@@ -238,6 +251,7 @@ func (c *Client) buildSpan(s *Span) (wireSpan, error) {
 			attrs[k] = v
 		}
 	}
+	attrs["bench.duration_ms"] = float64(time.Since(s.start)) / float64(time.Millisecond)
 	if c.options.Environment != "" {
 		attrs["bench.environment"] = c.options.Environment
 	}
@@ -267,7 +281,7 @@ func (c *Client) buildSpan(s *Span) (wireSpan, error) {
 			row.Model = limitText(text, 200)
 		}
 	}
-	if c.options.CaptureContent {
+	if c.options.CaptureContent || s.context.evaluation != nil {
 		for value, target := range map[*any]**string{&s.input.Input: &row.Input, &s.output: &row.Output} {
 			safe, e := c.safe(*value)
 			if e != nil {

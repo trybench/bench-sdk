@@ -6,7 +6,7 @@ static SENSITIVE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)authorization|cookie|password|secret|token|api.?key|email|phone|address|user.?id|(?:first|last|full).?name|card.?number").unwrap()
 });
 static METADATA: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^(code\.(filepath|lineno)|gen_ai\.(system|operation\.name|usage\.(input_tokens|output_tokens))|bench\.(component_id|environment|prompt_version))$").unwrap()
+    Regex::new(r"^(code\.(filepath|lineno)|gen_ai\.(system|provider\.name|operation\.name|request\.model|response\.model|tool\.(name|type|call\.id)|usage\.(input_tokens|output_tokens))|bench\.(component_id|environment|prompt_version|duration_ms|cost\.(usd|source|pricing_version)))$").unwrap()
 });
 static SECRET: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)(?:bench_sk_|apikey_|sk-)[a-zA-Z0-9_-]{8,}|Bearer\s+[a-zA-Z0-9._~+/-]+")
@@ -73,6 +73,9 @@ fn card_checksum(digits: &[u32]) -> bool {
     sum > 0 && sum.is_multiple_of(10)
 }
 pub fn redact(value: Value, depth: usize) -> Value {
+    redact_limit(value, depth, 100)
+}
+pub(crate) fn redact_limit(value: Value, depth: usize, max_items: usize) -> Value {
     if depth > 12 {
         return Value::String("[DEPTH_LIMIT]".into());
     }
@@ -104,7 +107,7 @@ pub fn redact(value: Value, depth: usize) -> Value {
             if s.trim_start().starts_with(['{', '[']) {
                 if let Ok(v) = serde_json::from_str::<Value>(&s) {
                     return Value::String(
-                        redact(v, depth + 1)
+                        redact_limit(v, depth + 1, max_items)
                             .to_string()
                             .chars()
                             .take(16000)
@@ -117,21 +120,21 @@ pub fn redact(value: Value, depth: usize) -> Value {
         Value::Array(items) => Value::Array(
             items
                 .into_iter()
-                .take(100)
-                .map(|v| redact(v, depth + 1))
+                .take(max_items)
+                .map(|v| redact_limit(v, depth + 1, max_items))
                 .collect(),
         ),
         Value::Object(items) => Value::Object(
             items
                 .into_iter()
-                .take(100)
+                .take(max_items)
                 .map(|(key, v)| {
                     let filtered = if SENSITIVE.is_match(&key)
                         && !(key.starts_with("gen_ai.usage.") && metadata(&key) && v.is_number())
                     {
                         Value::String("[REDACTED]".into())
                     } else {
-                        redact(v, depth + 1)
+                        redact_limit(v, depth + 1, max_items)
                     };
                     (text(&key), filtered)
                 })

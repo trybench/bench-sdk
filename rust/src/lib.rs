@@ -1,6 +1,13 @@
 //! Bounded server tracing for Bench. Capture never runs paid evaluations.
 //! Call `flush().await` at a request or shutdown boundary to deliver events.
+mod evaluation;
+mod simulation;
+pub use simulation::SimulationSession;
 mod privacy;
+pub use evaluation::{
+    Application, EvaluationContext, EvaluationOptions, EvaluationReport, EvaluationSummary,
+    SystemCase,
+};
 
 use serde::Serialize;
 use serde_json::{json, Map, Value};
@@ -53,6 +60,7 @@ pub struct TraceContext {
     trace_id: String,
     span_id: String,
     sampled: bool,
+    evaluation: Option<Arc<Mutex<evaluation::Capture>>>,
 }
 #[derive(Clone, Default)]
 pub struct SpanInput {
@@ -169,17 +177,24 @@ impl Bench {
                 .map(|p| p.trace_id.clone())
                 .unwrap_or_else(|| random.simple().to_string()),
             span_id: Uuid::new_v4().simple().to_string()[..16].to_owned(),
+            evaluation: parent.and_then(|p| p.evaluation.clone()),
             sampled: parent.map(|p| p.sampled).unwrap_or(
                 self.inner.options.sample_rate >= 1.0
                     || (bits as f64) / (u64::MAX as f64) < self.inner.options.sample_rate,
             ),
         };
+        if let Some(capture) = &context.evaluation {
+            capture.lock().unwrap_or_else(|e| e.into_inner()).start();
+        }
         Span {
             bench: self.clone(),
             input,
             context,
-            parent: parent.map(|p| p.span_id.clone()),
+            parent: parent
+                .filter(|p| !p.span_id.is_empty())
+                .map(|p| p.span_id.clone()),
             started: timestamp(),
+            duration_start: std::time::Instant::now(),
             output: None,
             status: "error",
             ended: false,
@@ -205,6 +220,14 @@ impl Bench {
                 })) {
                     Ok(Ok(output)) => span.set_output(output),
                     _ => {
+                        // The application succeeded, but its evidence is missing.
+                        // Do not mislabel this as a tool error or a complete evaluation.
+                        if let Some(capture) = &span.context.evaluation {
+                            capture
+                                .lock()
+                                .unwrap_or_else(|e| e.into_inner())
+                                .finish(None);
+                        }
                         span.ended = true;
                         self.drop_events(1)
                     }
@@ -246,6 +269,10 @@ impl Bench {
             .filter(|(k, _)| self.inner.options.capture_content || privacy::metadata(k))
             .map(|(k, v)| (k.clone(), v.clone()))
             .collect();
+        attrs.insert(
+            "bench.duration_ms".into(),
+            json!(span.duration_start.elapsed().as_secs_f64() * 1000.0),
+        );
         if let Some(env) = &self.inner.options.environment {
             attrs.insert("bench.environment".into(), json!(env));
         }
@@ -264,13 +291,23 @@ impl Bench {
         if let Some(model) = &span.input.model {
             row["model_name"] = self.safe(json!(model))?
         }
-        if self.inner.options.capture_content {
+        if self.inner.options.capture_content || span.context.evaluation.is_some() {
             row["input_value"] = json!(self
                 .safe(span.input.input.clone().unwrap_or(Value::Null))?
                 .to_string());
             row["output_value"] = json!(self
                 .safe(span.output.clone().unwrap_or(Value::Null))?
                 .to_string())
+        }
+        if let Some(capture) = &span.context.evaluation {
+            if row.to_string().len() > 200000 {
+                return Err("Trace too large.".into());
+            }
+            capture
+                .lock()
+                .unwrap_or_else(|e| e.into_inner())
+                .finish(Some(row));
+            return Ok(());
         }
         let trace = json!({"trace_id":span.context.trace_id,"source":"bench_sdk","spans":[row]});
         if trace.to_string().len() > 200000 {
@@ -359,6 +396,7 @@ pub struct Span {
     context: TraceContext,
     parent: Option<String>,
     started: String,
+    duration_start: std::time::Instant,
     output: Option<Value>,
     status: &'static str,
     ended: bool,
@@ -381,6 +419,12 @@ impl Span {
                 std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| self.bench.capture(self))),
                 Ok(Ok(()))
             ) {
+                if let Some(capture) = &self.context.evaluation {
+                    capture
+                        .lock()
+                        .unwrap_or_else(|e| e.into_inner())
+                        .finish(None);
+                }
                 self.bench.drop_events(1)
             }
         }

@@ -39,7 +39,7 @@ export interface Span {
 }
 interface Trace { trace_id: string; source: "bench_sdk"; spans: Span[] }
 const sensitiveKey = /authorization|cookie|password|secret|token|api.?key|email|phone|address|user.?id|(?:first|last|full).?name|card.?number/i;
-const allowedMetadata = /^(code\.(filepath|lineno)|gen_ai\.(system|operation\.name|usage\.(input_tokens|output_tokens))|bench\.(component_id|environment|prompt_version))$/;
+const allowedMetadata = /^(code\.(filepath|lineno)|gen_ai\.(system|provider\.name|operation\.name|request\.model|response\.model|tool\.(name|type|call\.id)|usage\.(input_tokens|output_tokens))|bench\.(component_id|environment|prompt_version|duration_ms|cost\.(usd|source|pricing_version)))$/;
 function cardChecksum(digits: string): boolean {
  const sum = [...digits].reverse().map(Number).reduce((sum,n,i) => sum + (i % 2 ? n * 2 - (n > 4 ? 9 : 0) : n), 0);
  return sum > 0 && sum % 10 === 0;
@@ -93,10 +93,11 @@ export class Bench {
  }
  private safe(value: unknown): unknown { return redact(this.options.redact ? this.options.redact(value) : value) }
  private report(message:string){try{this.options.onError?.(new Error(message))}catch{/* Telemetry callbacks cannot break the application. */}}
- private capture(input:SpanInput, traceId:string,spanId:string,parent:string|undefined,start:number,status:string){
+ private capture(input:SpanInput, traceId:string,spanId:string,parent:string|undefined,start:number,status:string,durationMs=0){
   if(this.closed)return;
   try {
    const attrs=Object.fromEntries(Object.entries(input.attributes??{}).filter(([key])=>this.options.captureContent||allowedMetadata.test(key)));
+   attrs["bench.duration_ms"]=durationMs;
    if(input.componentId)attrs["bench.component_id"]=input.componentId;
    if(this.options.environment)attrs["bench.environment"]=this.options.environment;
    const content=(value:unknown)=>value===undefined?undefined:JSON.stringify(this.safe(value));
@@ -118,11 +119,11 @@ export class Bench {
  async trace<T>(input:SpanInput,fn:()=>T|Promise<T>):Promise<T>{
   const parent=this.storage.getStore();
   const traceId=parent?.traceId??randomBytes(16).toString("hex"),spanId=randomBytes(8).toString("hex");
-  const sampled=parent?.sampled??Math.random()<(this.options.sampleRate??1),start=Date.now();
+  const sampled=parent?.sampled??Math.random()<(this.options.sampleRate??1),start=Date.now(),durationStart=performance.now();
   return this.storage.run({traceId,spanId,sampled,evaluation:parent?.evaluation},async()=>{
    if(parent?.evaluation)parent.evaluation.pending++;
-   try{const output=await fn();if(sampled)this.capture({...input,output:input.output === undefined ? output : input.output},traceId,spanId,parent?.spanId,start,"ok");return output}
-   catch(error){if(sampled)this.capture(input,traceId,spanId,parent?.spanId,start,"error");throw error}
+   try{const output=await fn();if(sampled)this.capture({...input,output:input.output === undefined ? output : input.output},traceId,spanId,parent?.spanId,start,"ok",performance.now()-durationStart);return output}
+   catch(error){if(sampled)this.capture(input,traceId,spanId,parent?.spanId,start,"error",performance.now()-durationStart);throw error}
    finally{if(parent?.evaluation)parent.evaluation.pending--}
   });
  }
@@ -154,9 +155,13 @@ export class Bench {
    try {
     const execution = await Promise.race([
      (async () => {
-      const value = await this.storage.run({traceId:randomBytes(16).toString('hex'),spanId:'',sampled:true,evaluation}, () => this.trace({name:'system-entrypoint',kind:'AGENT',input:structuredClone(item.input)}, () => options.run(structuredClone(item.input),{caseId:item.id,signal:controller.signal})));
-      if(controller.signal.aborted)throw new Error('Stopped');
-      const state = options.observe ? await options.observe({caseId:item.id,signal:controller.signal}) : undefined;
+      let state: unknown;
+      const value = await this.storage.run({traceId:randomBytes(16).toString('hex'),spanId:'',sampled:true,evaluation}, () => this.trace({name:'system-entrypoint',kind:'AGENT',input:structuredClone(item.input)}, async () => {
+       const output = await options.run(structuredClone(item.input),{caseId:item.id,signal:controller.signal});
+       if(controller.signal.aborted)throw new Error('Stopped');
+       state = options.observe ? await options.observe({caseId:item.id,signal:controller.signal}) : undefined;
+       return output;
+      }));
       return {value,state};
      })(),
      new Promise<never>((_,reject) => {

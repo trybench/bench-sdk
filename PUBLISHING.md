@@ -8,7 +8,7 @@ manual acceptance is complete.
 
 | Package | Manifest | Release tag |
 | --- | --- | --- |
-| npm `@trybench/sdk` | `package.json` | `js/v0.1.0` |
+| npm `@benchai/sdk` | `package.json` | `js/v0.1.0` |
 | PyPI `trybench-sdk` | `python/pyproject.toml` | `python/v0.1.0` |
 | Go `github.com/trybench/bench-sdk/go` | `go/go.mod` | **`go/v0.1.0`** |
 | crates.io `trybench-sdk` | `rust/Cargo.toml` | `rust/v0.1.0` |
@@ -25,8 +25,8 @@ changelog aligned. Once published, release a new version for corrections.
 - Review package contents for keys, `.env` files, customer payloads and internal
   reports. Verify the README, license and declaration/type files are included.
 - Confirm the public documentation describes the package's actual capabilities.
-  Native packages currently provide tracing; JavaScript also has evaluation and
-  scripted simulation helpers.
+  All four packages provide tracing, local application evaluation, scripted
+  simulations and explicit report publication.
 - Confirm the intended API endpoint and authenticate with a newly scoped test key.
 - Enable registry account protection and protected release approvals. Prefer
   short-lived trusted publishing credentials where supported.
@@ -52,11 +52,12 @@ npm pack
 ```
 
 Install the resulting tarball in a clean Node application and run a staging trace.
-For public release, remove `"private": true` from `package.json`, set the approved
-version, update the lockfile, and inspect a fresh tarball. Only then run:
+For a release, set the approved version, update the lockfile and inspect a fresh
+tarball. The npm package is configured for public access under `@benchai`. Publish
+the exact archive tested in the fresh consumer:
 
 ```sh
-npm publish --access public
+npm publish ./benchai-sdk-0.1.0.tgz --access public
 ```
 
 For recurring releases, configure npm trusted publishing for the exact repository

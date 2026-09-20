@@ -4,30 +4,25 @@ One repository, independently released language packages:
 
 | Language | Package | Source and setup |
 | --- | --- | --- |
-| JavaScript / TypeScript | `@trybench/sdk` | This page; `src/` |
-| Python | `trybench-sdk` (`bench_sdk` import) | [Python guide](python/README.md) |
-| Go | `github.com/trybench/bench-sdk/go` | [Go guide](go/README.md) |
-| Rust | `trybench-sdk` (`trybench_sdk` import) | [Rust guide](rust/README.md) |
+| JavaScript / TypeScript | `@benchai/sdk` | This page; `src/` |
+| Python | `trybench-sdk` (`bench_sdk` import) | [Python guide](https://docs.usebench.ai/sdk/python) |
+| Go | `github.com/trybench/bench-sdk/go` | [Go guide](https://docs.usebench.ai/sdk/go) |
+| Rust | `trybench-sdk` (`trybench_sdk` import) | [Rust guide](https://docs.usebench.ai/sdk/rust) |
 
-All are unpublished previews. Each client supports server tracing, environments,
-nested spans, bounded delivery and default redaction. The JavaScript package
-also includes application evaluation and simulation helpers. Native equivalents
-and automatic framework adapters are coming soon. See [publishing](PUBLISHING.md)
-for independent package releases.
+Each client supports server tracing, environments, nested spans, bounded delivery
+and default redaction. This npm package includes application evaluation and
+scripted simulation helpers. Python, Go and Rust are separate packages with their
+own installation instructions. Automatic framework adapters are coming soon.
 
 ## JavaScript and TypeScript
 
 Capture server-side AI interactions without changing their return values or errors.
 Available on every plan. Trace collection never starts a paid check by itself.
 
-This package has **not been published**. Build and install it locally:
+Install the JavaScript and TypeScript package:
 
 ```sh
-npm ci
-npm test
-npm pack
-# In the app to instrument:
-npm install /absolute/path/to/trybench-sdk-0.1.0.tgz
+npm install @benchai/sdk
 ```
 
 Node.js 20+ and ESM are supported. Use the SDK page in Bench to create a
@@ -36,7 +31,7 @@ The default setup key has a zero evaluation cap. Store it only in a gitignored,
 server-side environment file, never in `NEXT_PUBLIC_*` or `VITE_*` variables.
 
 ```ts
-import { Bench } from '@trybench/sdk'
+import { Bench } from '@benchai/sdk'
 
 const bench = new Bench({
   apiKey: process.env.BENCH_API_KEY!,
@@ -97,8 +92,8 @@ key. No automatic code deployment or business-policy rewrite occurs.
 
 The setup skill is at `skills/bench-sdk/SKILL.md`. Documentation is maintained in
 the separate `bench-docs` repository and published at https://docs.usebench.ai/sdk/quickstart.
-The staging setup can use a commit-pinned Git install from this private repository.
-It requires GitHub repository access. No npm release is implied by that preview.
+Use the API address shown on your Bench SDK setup page. Installing this package
+does not deploy your application or enable automatic paid evaluations.
 
 ### Scripted customer simulations
 
@@ -116,4 +111,26 @@ incomplete result. Reports retain the SDK environment, observed state and busine
 outcome alongside the reply and traces. Use unchanged cases and context for baseline
 and candidate comparisons. These are scripted simulations and client-reported
 observations; the SDK does not automatically clone external services or synthesize
-an adaptive customer. See the application testing guide for the complete example.
+an adaptive customer. See [application testing](https://docs.usebench.ai/sdk/system-evaluation) for the complete example.
+
+## Latency, tool calls and cost
+
+Every recorded call carries start/end timestamps, status, parent span ID and an
+automatically measured `bench.duration_ms` from a monotonic clock. Wrap each tool
+execution, including retries, with a TOOL span to retain its individual timing.
+Use `gen_ai.operation.name=execute_tool` and `gen_ai.tool.name` for tool identity.
+Production sampling can omit traces; a rate of 1 records each instrumented call.
+The bounded delivery queue is not a guarantee against network or process loss.
+
+Add `gen_ai.provider.name`, `gen_ai.request.model`, `gen_ai.response.model`,
+`gen_ai.usage.input_tokens` and `gen_ai.usage.output_tokens` when your provider
+returns them. Add `bench.cost.usd` for the cost of that individual call and
+`bench.cost.source` as `reported` or `estimated`. For estimates, also include
+`bench.cost.pricing_version`. These fields survive metadata-only capture, so you
+can measure usage without recording prompts or responses. Missing cost is unknown,
+not zero. Do not repeat a child cost on its parent or count overlapping token
+categories twice. The SDK does not guess provider prices or a tool's own charges.
+
+The `gen_ai.*` names follow selected OpenTelemetry conventions. `bench.cost.*` and
+`bench.duration_ms` are Bench extensions. Events currently use Bench JSON over
+HTTPS; this release is not an OTLP exporter or collector.

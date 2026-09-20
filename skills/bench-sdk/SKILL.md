@@ -8,7 +8,8 @@ description: Install and verify Bench's server-side SDK for JavaScript, Python, 
 Read the selected language package README for its actual API. JavaScript uses
 Node.js 20+ ESM. Python, Go and Rust packages live in their named subdirectories.
 These are server clients, not browser instrumentation or OTLP collectors.
-Use the supplied package or pinned source; do not assume registry publication.
+Install the JavaScript package with `npm install @benchai/sdk`. For native
+packages, use the supplied package or pinned source from their documentation.
 
 Use the repository, branch, endpoint and key supplied by the user's Bench quick
 start. Write the key only into an existing gitignored server environment file.
@@ -37,5 +38,6 @@ Never describe recorded runtime metadata as a completed benchmark or treat a
 model judgment as a verified golden label. Publication or deployment requires
 the user's separate authorization.
 
-Only the JavaScript package currently has application evaluation and scripted
-simulation helpers. Do not invent equivalent helper APIs in the native packages.
+For application evaluation and scripted simulations, use the APIs documented by
+the installed language package. Run synthetic cases with isolated test state.
+Report upload is an explicit step; it must not happen during ordinary tracing setup.

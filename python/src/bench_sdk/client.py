@@ -17,7 +17,7 @@ from typing import Any, Callable, Iterator
 from urllib.parse import urlsplit
 
 _SENSITIVE = re.compile(r"authorization|cookie|password|secret|token|api.?key|email|phone|address|user.?id|(?:first|last|full).?name|card.?number", re.I)
-_METADATA = re.compile(r"^(code\.(filepath|lineno)|gen_ai\.(system|operation\.name|usage\.(input_tokens|output_tokens))|bench\.(component_id|environment|prompt_version))$")
+_METADATA = re.compile(r"^(code\.(filepath|lineno)|gen_ai\.(system|provider\.name|operation\.name|request\.model|response\.model|tool\.(name|type|call\.id)|usage\.(input_tokens|output_tokens))|bench\.(component_id|environment|prompt_version|duration_ms|cost\.(usd|source|pricing_version)))$")
 _SECRETS = re.compile(r"(?:bench_sk_|apikey_|sk-)[a-zA-Z0-9_-]{8,}|Bearer\s+[a-zA-Z0-9._~+/-]+", re.I)
 _EMAIL = re.compile(r"[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+", re.I)
 _PHONE = re.compile(r"\+\d[\d ()-]{8,}\d")
@@ -46,14 +46,14 @@ def _card(match: re.Match) -> str:
     return match[0]
 
 
-def _redact(value: Any, depth: int = 0) -> Any:
+def _redact(value: Any, depth: int = 0, max_items: int = 100) -> Any:
     if depth > 12:
         return "[DEPTH_LIMIT]"
     if isinstance(value, str):
         # Encoded JSON must receive the same field filtering as an object.
         if value.lstrip().startswith(("{", "[")):
             try:
-                return json.dumps(_redact(json.loads(value), depth + 1), ensure_ascii=False)[:16000]
+                return json.dumps(_redact(json.loads(value), depth + 1, max_items), ensure_ascii=False)[:16000]
             except (ValueError, RecursionError):
                 pass
         value = _SECRETS.sub("[REDACTED_SECRET]", value)
@@ -61,9 +61,9 @@ def _redact(value: Any, depth: int = 0) -> Any:
         value = _CARD.sub(_card, _IP.sub(_ip, value))
         return _PHONE.sub("[REDACTED_PHONE]", value)[:16000]
     if isinstance(value, dict):
-        return {_redact(str(k), depth + 1): "[REDACTED]" if _SENSITIVE.search(str(k)) and not (_METADATA.fullmatch(str(k)) and str(k).startswith("gen_ai.usage.") and isinstance(v, (int, float))) else _redact(v, depth + 1) for k, v in list(value.items())[:100]}
+        return {_redact(str(k), depth + 1, max_items): "[REDACTED]" if _SENSITIVE.search(str(k)) and not (_METADATA.fullmatch(str(k)) and str(k).startswith("gen_ai.usage.") and isinstance(v, (int, float))) else _redact(v, depth + 1, max_items) for k, v in list(value.items())[:max_items]}
     if isinstance(value, (list, tuple)):
-        return [_redact(v, depth + 1) for v in value[:100]]
+        return [_redact(v, depth + 1, max_items) for v in value[:max_items]]
     if not isinstance(value, bool) and (isinstance(value, int) or (isinstance(value, float) and math.isfinite(value) and value.is_integer())):
         normalized = str(int(value))
         if 13 <= len(normalized) <= 19:
@@ -123,6 +123,7 @@ class Bench:
         self._max, self._timeout, self._redactor, self._on_error = max_queue_size, timeout, redact, on_error
         self._transport = transport or self._http
         self._context: contextvars.ContextVar = contextvars.ContextVar("bench_span", default=None)
+        self._evaluation: contextvars.ContextVar = contextvars.ContextVar("bench_evaluation", default=None)
         self._lock, self._flush_lock = threading.Lock(), threading.Lock()
         self._queue: list[dict] = []
         self._closed, self._dropped = False, 0
@@ -142,10 +143,13 @@ class Bench:
               attributes: dict | None = None, component_id: int | None = None) -> Iterator[Span]:
         if kind not in _KINDS:
             raise ValueError("Invalid span kind.")
+        evaluation = self._evaluation.get()
+        if evaluation is not None:
+            evaluation.start()
         parent = self._context.get()
         trace_id = parent[0] if parent else secrets.token_hex(16)
-        sampled = parent[2] if parent else random.random() < self._sample
-        span_id, started = secrets.token_hex(8), _now()
+        sampled = evaluation is not None or (parent[2] if parent else random.random() < self._sample)
+        span_id, started, duration_start = secrets.token_hex(8), _now(), time.monotonic()
         token = self._context.set((trace_id, span_id, sampled))
         span, status = Span(name, kind, input, attributes, model, component_id), "error"
         try:
@@ -154,11 +158,13 @@ class Bench:
         finally:
             self._context.reset(token)
             if sampled:
-                self._record(span, trace_id, span_id, parent[1] if parent else None, started, status)
+                self._record(span, trace_id, span_id, parent[1] if parent else None, started, status, evaluation, (time.monotonic() - duration_start) * 1000)
 
-    def _record(self, span: Span, trace_id: str, span_id: str, parent: str | None, started: str, status: str) -> None:
+    def _record(self, span: Span, trace_id: str, span_id: str, parent: str | None, started: str, status: str, evaluation=None, duration_ms: float = 0) -> None:
+        row = None
         try:
             attrs = {k: v for k, v in span.attributes.items() if self._capture or _METADATA.fullmatch(k)}
+            attrs["bench.duration_ms"] = duration_ms
             if self._environment:
                 attrs["bench.environment"] = self._environment
             if span.component_id is not None:
@@ -169,21 +175,51 @@ class Bench:
                 row["parent_span_id"] = parent
             if span.model:
                 row["model_name"] = str(self._safe(span.model))[:200]
-            if self._capture:
+            if self._capture or evaluation is not None:
                 row["input_value"] = json.dumps(self._safe(span.input), ensure_ascii=False, allow_nan=False)
                 row["output_value"] = json.dumps(self._safe(span.output), ensure_ascii=False, allow_nan=False)
             trace = {"trace_id": trace_id, "source": "bench_sdk", "spans": [row]}
             if len(json.dumps(trace).encode()) > 200000:
                 raise ValueError("Trace too large")
+            if evaluation is not None:
+                evaluation.finish(row)
+                return
             with self._lock:
                 if self._closed or len(self._queue) >= self._max:
                     self._dropped += 1
                 else:
                     self._queue.append(trace)
         except Exception:
+            if evaluation is not None:
+                evaluation.finish(None)
+                return
             with self._lock:
                 self._dropped += 1
             self._report("Trace could not be captured; dropped.")
+
+    async def evaluate_system(self, **options) -> dict:
+        """Run application cases locally. Returns a redacted report; no implicit upload."""
+        from .evaluation import evaluate
+        return await evaluate(self, **options)
+
+    async def simulate_system(self, **options) -> dict:
+        """Replay customer turns against a fresh app session and independently observed state."""
+        from .evaluation import simulate
+        return await simulate(self, **options)
+
+    async def publish_system_evaluation(self, system_id: int, report: dict) -> None:
+        """Explicitly save a redacted report. Raises on failure; spends no evaluations."""
+        import asyncio
+        if type(system_id) is not int or not 1 <= system_id <= 9007199254740991:
+            raise ValueError("Select a system.")
+        raw = self._redactor(report) if self._redactor else report
+        body = json.dumps(_redact(raw, max_items=300), allow_nan=False).encode()
+        if len(body) > 500000:
+            raise ValueError("Runtime report exceeds 500 KB. Retain it locally or split the suite.")
+        url = self._endpoint.removesuffix("/api/traces") + f"/api/ai-systems/{system_id}/runtime-evaluations"
+        status = await asyncio.to_thread(self._transport, url, {"Content-Type": "application/json", "Authorization": "Bearer " + self._key}, body, self._timeout)
+        if not 200 <= status < 300:
+            raise RuntimeError(f"Could not save application results (HTTP {status}). Local results remain available.")
 
     @staticmethod
     def _http(url: str, headers: dict[str, str], body: bytes, timeout: float) -> int:

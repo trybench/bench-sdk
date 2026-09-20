@@ -2,10 +2,23 @@ import {test} from "node:test";
 import assert from "node:assert/strict";
 import {Bench} from "../dist/index.js";
 function make(extra={}){const payloads=[];return{payloads,bench:new Bench({apiKey:"bench_sk_test",repository:"org/repo",branch:"main",fetch:async(_,req)=>{payloads.push(JSON.parse(req.body));return new Response("{}",{status:201})},...extra})}}
-test("capture is metadata-only by default and does not evaluate",async()=>{const{bench,payloads}=make();const out=await bench.trace({name:"answer",input:"secret",attributes:{password:"no","gen_ai.usage.input_tokens":3}},()=>({text:"private"}));assert.deepEqual(out,{text:"private"});await bench.shutdown();assert.equal(payloads[0].capture_content,false);const span=payloads[0].traces[0].spans[0];assert.equal(span.input_value,undefined);assert.equal(span.output_value,undefined);assert.deepEqual(span.attributes,{"gen_ai.usage.input_tokens":3})});
+test("capture is metadata-only by default and does not evaluate",async()=>{const{bench,payloads}=make();const out=await bench.trace({name:"answer",input:"secret",attributes:{password:"no","gen_ai.usage.input_tokens":3}},()=>({text:"private"}));assert.deepEqual(out,{text:"private"});await bench.shutdown();assert.equal(payloads[0].capture_content,false);const span=payloads[0].traces[0].spans[0];assert.equal(span.input_value,undefined);assert.equal(span.output_value,undefined);assert.equal(span.attributes["gen_ai.usage.input_tokens"],3);assert.equal(Object.keys(span.attributes).length,2);assert.ok(span.attributes["bench.duration_ms"]>=0)});
 test("opt-in capture redacts secrets and preserves parent links",async()=>{const{bench,payloads}=make({captureContent:true});await bench.trace({name:"agent",kind:"AGENT"},()=>bench.trace({name:"tool",kind:"TOOL",input:{email:"a@example.com",password:"bad"}},()=>false));await bench.shutdown();const traces=payloads[0].traces;assert.equal(traces[0].trace_id,traces[1].trace_id);assert.equal(traces[0].spans[0].parent_span_id,traces[1].spans[0].span_id);assert.equal(traces[0].spans[0].output_value,"false");assert.ok(!JSON.stringify(payloads).includes("a@example.com"));assert.equal(JSON.parse(traces[0].spans[0].input_value).password,"[REDACTED]")});
 test("telemetry cannot replace application exceptions",async()=>{const error=new Error("app");const{bench}=make({redact:()=>{throw new Error("redactor")}});await assert.rejects(bench.trace({name:"x"},()=>{throw error}),e=>e===error);await bench.shutdown()});
 test("failed retries reuse IDs and queue is bounded",async()=>{const bodies=[];const{bench}=make({maxQueueSize:1,fetch:async(_,r)=>{bodies.push(r.body);return new Response("",{status:500})}});bench.record({name:"one"});bench.record({name:"two"});await bench.shutdown();assert.equal(bodies.length,2);assert.equal(bodies[0],bodies[1]);assert.equal(bench.stats.dropped,2)});
 test("sampling off suppresses a complete nested trace",async()=>{const{bench,payloads}=make({sampleRate:0});await bench.trace({name:"outer"},()=>bench.trace({name:"inner"},()=>1));await bench.shutdown();assert.equal(payloads.length,0)});
 test("refuses insecure remote URLs",()=>{assert.throws(()=>make({endpoint:"http://remote.example"}),/HTTPS/);assert.throws(()=>make({sampleRate:2}),/range/)});
 test("environment identifies received events without capturing content",async()=>{const{bench,payloads}=make({environment:"staging"});bench.record({name:"setup"});await bench.shutdown();assert.equal(payloads[0].traces[0].spans[0].attributes["bench.environment"],"staging");assert.equal(payloads[0].traces[0].spans[0].input_value,undefined)});
+
+test('tool duration and reported cost survive metadata-only capture without request content', async()=>{
+ const sent=[];
+ const bench=new Bench({apiKey:'bench_sk_test',repository:'test/tools',branch:'dev',fetch:async(_,options)=>{sent.push(JSON.parse(options.body));return new Response('{}',{status:201})}});
+ await bench.trace({name:'search',kind:'TOOL',input:'private query',attributes:{'gen_ai.operation.name':'execute_tool','gen_ai.tool.name':'search','gen_ai.tool.call.id':'call-1','bench.cost.usd':0.002,'bench.cost.source':'reported','bench.duration_ms':-1,private:'customer input'}},async()=>{await new Promise(resolve=>setTimeout(resolve,5));return 'private result'});
+ await bench.shutdown();
+ const span=sent[0].traces[0].spans[0];
+ assert.equal(span.attributes['bench.cost.usd'],0.002);
+ assert.equal(span.attributes['bench.cost.source'],'reported');
+ assert.equal(span.attributes['gen_ai.tool.call.id'],'call-1');
+ assert.ok(span.attributes['bench.duration_ms']>=1);
+ assert.equal(span.input_value,undefined);assert.equal(span.output_value,undefined);assert.equal(span.attributes.private,undefined);
+});
