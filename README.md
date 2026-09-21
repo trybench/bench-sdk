@@ -142,3 +142,43 @@ categories twice. The SDK does not guess provider prices or a tool's own charges
 The `gen_ai.*` names follow selected OpenTelemetry conventions. `bench.cost.*` and
 `bench.duration_ms` are Bench extensions. Events currently use Bench JSON over
 HTTPS; this release is not an OTLP exporter or collector.
+
+## Headless development workflows
+
+The development branch exposes all 135 user-facing API operations at
+`GET https://api.staging.usebench.ai/api/headless/operations`: setup, GitHub,
+prompts/systems, context, files/datasets, tests/criteria, evaluations/history,
+real app reports, production feedback, workspaces and billing.
+
+MCP OAuth supports account setup without Bench browser onboarding. GitHub grants
+and Stripe payment confirmation require the user's provider approval. Scoped API
+keys retain repository, ownership and spending restrictions and cannot mint
+credentials or change billing/team access. Model selection requires active Growth
+or Enterprise. Use explicit approval before spending, sending invitations, changing
+billing or publishing code.
+
+Documentation source: `guides/headless.mdx`, `sdk/platform.mdx` and
+`reference/headless.mdx` on bench-docs's development branch. This is a development
+preview; a dev merge does not publish production packages.
+
+### SDK platform clients
+
+TypeScript/Python/Rust export `BenchPlatform`; Go provides `NewPlatform`.
+`call` (`Call` in Go) accepts an operation name and `path`, `query`, `body`, or
+`form`/`files` for explicit uploads. `operations()` (`Operations()` in Go) returns
+the contract. These clients are independent of tracing and local app evaluation.
+
+```ts
+import { BenchPlatform } from '@benchai/sdk'
+const platform = new BenchPlatform({
+  credential: process.env.BENCH_API_KEY!,
+  endpoint: 'https://api.staging.usebench.ai',
+})
+const systems = await platform.call('list_systems')
+const context = await platform.call('get_system_context', { path: { id: 123 } })
+```
+
+Files accept text/bytes. Errors preserve status/code/reference. Writes never retry
+automatically, redirects never forward credentials, and requests are bounded.
+The published 0.1.0 packages do not contain the platform client: build this
+development branch until a package including it is published.
