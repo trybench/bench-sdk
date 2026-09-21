@@ -228,3 +228,6 @@ export class Bench {
  }
  async shutdown(){this.closed=true;clearInterval(this.timer);await this.flush()}
 }
+
+export { BenchPlatform, PlatformError, operationCatalog } from './platform.js';
+export type { OperationId, PlatformOptions, PlatformRequest, PlatformFile } from './platform.js';

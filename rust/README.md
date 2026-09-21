@@ -131,3 +131,10 @@ categories twice. The SDK does not guess provider prices or a tool's own charges
 The `gen_ai.*` names follow selected OpenTelemetry conventions. `bench.cost.*` and
 `bench.duration_ms` are Bench extensions. Events currently use Bench JSON over
 HTTPS; this release is not an OTLP exporter or collector.
+
+## Headless platform management (development)
+
+This branch includes a platform client for all Bench API operations. See the root
+README and bench-docs `sdk/platform.mdx` for this language's example. Use the
+development API and credentials. Existing tracing, real app evaluation and
+simulation APIs are unchanged. Platform calls do not execute the app implicitly.

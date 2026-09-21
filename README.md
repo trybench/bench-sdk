@@ -142,3 +142,46 @@ categories twice. The SDK does not guess provider prices or a tool's own charges
 The `gen_ai.*` names follow selected OpenTelemetry conventions. `bench.cost.*` and
 `bench.duration_ms` are Bench extensions. Events currently use Bench JSON over
 HTTPS; this release is not an OTLP exporter or collector.
+
+## Headless workflows
+
+Bench exposes all 135 user-facing API operations at
+`GET https://api.usebench.ai/api/headless/operations`: setup, GitHub,
+prompts/systems, context, files/datasets, tests/criteria, evaluations/history,
+real app reports, production feedback, workspaces and billing.
+
+MCP OAuth supports account setup without Bench browser onboarding. GitHub grants
+and Stripe payment confirmation require the user's provider approval. Scoped API
+keys retain repository, ownership and spending restrictions and cannot mint
+credentials or change billing/team access. Model selection requires active Growth
+or Enterprise. Use explicit approval before spending, sending invitations, changing
+billing or publishing code.
+
+Use `https://api.staging.usebench.ai` and `https://mcp.staging.usebench.ai/mcp`
+for development; production MCP is `https://mcp.usebench.ai/mcp`. Credentials
+are separate between environments. See the [headless guide](https://docs.usebench.ai/guides/headless),
+[platform SDK clients](https://docs.usebench.ai/sdk/platform) and
+[operation reference](https://docs.usebench.ai/reference/headless).
+
+### SDK platform clients
+
+TypeScript/Python/Rust export `BenchPlatform`; Go provides `NewPlatform`.
+`call` (`Call` in Go) accepts an operation name and `path`, `query`, `body`, or
+`form`/`files` for explicit uploads. `operations()` (`Operations()` in Go) returns
+the contract. These clients are independent of tracing and local app evaluation.
+
+```ts
+import { BenchPlatform } from '@benchai/sdk'
+const platform = new BenchPlatform({
+  credential: process.env.BENCH_API_KEY!,
+  endpoint: 'https://api.staging.usebench.ai',
+})
+const systems = await platform.call('list_systems')
+const context = await platform.call('get_system_context', { path: { id: 123 } })
+```
+
+Files accept text/bytes. Errors preserve status/code/reference. Writes never retry
+automatically, redirects never forward credentials, and requests are bounded.
+The published 0.1.0 packages do not contain the platform client: build this
+source until a package including it is published. Source installation commands
+are documented in the [platform SDK guide](https://docs.usebench.ai/sdk/platform#install-the-platform-clients).
