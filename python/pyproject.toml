@@ -22,3 +22,6 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 bench_sdk = ["py.typed"]
+
+[project.scripts]
+bench = "bench_sdk.cli:main"
