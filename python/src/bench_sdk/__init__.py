@@ -9,3 +9,4 @@ from .evaluations import EvaluationClient, EvaluationPolicy, EvaluationResult
 __all__ += ["EvaluationClient", "EvaluationPolicy", "EvaluationResult"]
 from .runtime_gateway import BenchGateway as RuntimeGateway
 __all__ += ["RuntimeGateway"]
+from .platform import BenchPlatform, PlatformError

@@ -468,3 +468,6 @@ impl Drop for Span {
 fn timestamp() -> String {
     chrono::Utc::now().to_rfc3339_opts(chrono::SecondsFormat::Millis, true)
 }
+
+mod platform;
+pub use platform::{BenchPlatform, PlatformError, PlatformFile, PlatformRequest};

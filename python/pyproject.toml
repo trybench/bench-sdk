@@ -21,7 +21,7 @@ Repository = "https://github.com/trybench/bench-sdk"
 where = ["src"]
 
 [tool.setuptools.package-data]
-bench_sdk = ["py.typed"]
+bench_sdk = ["py.typed", "operations.json"]
 
 [project.scripts]
 bench = "bench_sdk.cli:main"

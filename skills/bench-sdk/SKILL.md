@@ -41,3 +41,18 @@ the user's separate authorization.
 For application evaluation and scripted simulations, use the APIs documented by
 the installed language package. Run synthetic cases with isolated test state.
 Report upload is an explicit step; it must not happen during ordinary tracing setup.
+
+## Headless development setup
+
+Start with `bench_capabilities` and `bench_get_setup_status`. Authenticate through
+MCP OAuth for account setup and SDK-key creation. Read the processing notice and
+obtain user authorization before accepting a data source. `bench_connect_github`
+starts the agent return flow; the user approves GitHub access and the agent resumes
+with `bench_finish_github_connection`.
+
+Use `bench_create_api_key` for a scoped application credential. Store it in the
+project's secret environment; never echo or commit it. Instrument the actual entry
+point, run a synthetic trace and verify `bench_sdk_status`. Prepare real app tests
+and publish explicitly requested reports. The platform client manages saved
+resources; the tracing client executes real app tests and simulations. The new
+platform client requires a development source build until it is published.
