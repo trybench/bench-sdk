@@ -229,5 +229,8 @@ export class Bench {
  async shutdown(){this.closed=true;clearInterval(this.timer);await this.flush()}
 }
 
+export { EvaluationClient } from './evaluation-client.js';
+export type { EvaluationPolicy, EvaluationSpec, EvaluationCase, EvaluationPlan, EvaluationResult, EvaluationRun, EvaluationDecision } from './evaluation-client.js';
+export { RuntimeGateway } from './runtime-gateway.js';
 export { BenchPlatform, PlatformError, operationCatalog } from './platform.js';
 export type { OperationId, PlatformOptions, PlatformRequest, PlatformFile } from './platform.js';
