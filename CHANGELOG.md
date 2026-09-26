@@ -1,5 +1,10 @@
 # Changelog
 
+## 0.2.1 (beta)
+
+- Default API endpoint is `https://api.usebench.ai` in every client. The previous default pointed at a host Bench no longer controls; set `endpoint` explicitly if you pin an older version.
+- READMEs describe Bench as evaluating and improving AI systems.
+
 ## 0.2.0 (beta)
 
 - OpenTelemetry bridge (`BenchSpanExporter`, Python `bench_sdk.otel.attach`) and `record_external_span` /

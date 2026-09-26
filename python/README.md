@@ -1,6 +1,6 @@
 # Bench Python SDK · Beta
 
-**Beta, version 0.2.0.** Pin versions and test upgrades in staging.
+**Beta, version 0.2.1.** Pin versions and test upgrades in staging.
 
 Bench evaluates and improves AI systems: agents, prompts, tools, model
 configuration and hand-offs. This SDK traces Python applications, agents and tools
@@ -19,7 +19,7 @@ bench = Bench(
     branch="main",
     environment="staging",
     system_name="Support agent",
-    endpoint=os.environ.get("BENCH_API_BASE_URL", "https://api.trybench.ai"),
+    endpoint=os.environ.get("BENCH_API_BASE_URL", "https://api.usebench.ai"),
 )
 
 try:

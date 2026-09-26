@@ -45,7 +45,7 @@ impl Options {
             branch: branch.into(),
             system_name: None,
             environment: None,
-            endpoint: "https://api.trybench.ai".into(),
+            endpoint: "https://api.usebench.ai".into(),
             capture_content: false,
             sample_rate: 1.0,
             max_queue_size: 200,

@@ -1,6 +1,6 @@
 # Bench Rust SDK · Beta
 
-**Beta, version 0.2.0.** Pin versions and test upgrades in staging.
+**Beta, version 0.2.1.** Pin versions and test upgrades in staging.
 
 Bench evaluates and improves AI systems: agents, prompts, tools, model
 configuration and hand-offs. This SDK traces Rust applications, agents and tools

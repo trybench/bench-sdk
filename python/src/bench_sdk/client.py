@@ -139,7 +139,7 @@ class Bench:
     Async tasks inherit their parent's context without sharing sibling span IDs.
     """
     def __init__(self, *, api_key: str, repository: str, branch: str, system_name: str | None = None,
-                 environment: str | None = None, endpoint: str = "https://api.trybench.ai",
+                 environment: str | None = None, endpoint: str = "https://api.usebench.ai",
                  capture_content: bool = False, sample_rate: float = 1, max_queue_size: int = 200,
                  timeout: float = 5, redact: Callable[[Any], Any] | None = None,
                  on_error: Callable[[str], None] | None = None,

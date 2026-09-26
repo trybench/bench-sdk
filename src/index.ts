@@ -108,7 +108,7 @@ export class Bench {
   if (!options.repository || !options.branch) throw new Error("repository and branch are required.");
   if (!/^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/.test(options.repository) || [options.repository,options.branch].some(value=>value.length>200 || /[\x00-\x1f\x7f]/.test(value) || redact(value)!==value)) throw new Error("Use static repository and branch names without personal data or secrets.");
   if (options.environment !== undefined && !/^[a-zA-Z0-9_.-]{1,64}$/.test(options.environment)) throw new Error("environment must be a short deployment name.");
-  const endpoint = new URL(options.endpoint ?? "https://api.trybench.ai");
+  const endpoint = new URL(options.endpoint ?? "https://api.usebench.ai");
   if (endpoint.username || endpoint.password || endpoint.search || endpoint.hash || (endpoint.protocol !== "https:" && !(endpoint.protocol === "http:" && ["localhost","127.0.0.1","[::1]"].includes(endpoint.hostname)))) throw new Error("Use HTTPS or a loopback HTTP endpoint.");
   for (const [name,value,min,max] of [["sampleRate",options.sampleRate??1,0,1],["maxQueueSize",options.maxQueueSize??200,1,2000],["flushIntervalMs",options.flushIntervalMs??2000,100,60000],["timeoutMs",options.timeoutMs??5000,100,30000]] as const) {
    if (!Number.isFinite(value)||value<min||value>max) throw new Error(name+" is out of range.");
