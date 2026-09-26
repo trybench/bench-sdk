@@ -17,7 +17,14 @@ class EvaluationPolicy(TypedDict, total=False):
     max_cost_ratio: float
     max_latency_ratio: float
     repetitions: int
+    confirmation_repetitions: int
     pilot_groups: int
+
+
+class BudgetExtension(TypedDict, total=False):
+    max_cost_usd: float
+    max_trials: int
+    max_duration_s: float
 
 
 class EvaluationResult(TypedDict):
@@ -57,7 +64,19 @@ class EvaluationClient:
     def status(self, run_id: str): return self._request(f'evaluation-runs/{quote(run_id,safe="")}')
     def events(self, run_id: str, after=0): return self._request(f'evaluation-runs/{quote(run_id,safe="")}/events?after={int(after)}')
     def cancel(self, run_id: str): return self._request(f'evaluation-runs/{quote(run_id,safe="")}/cancel','POST',{})
-    def resume(self, run_id: str, idempotency_key: str): return self._request(f'evaluation-runs/{quote(run_id,safe="")}/resume','POST',{},idempotency_key)
+    def resume(self, run_id: str, idempotency_key: str, *, extend_budget: BudgetExtension | None = None, retry_ambiguous_attempt: bool = False):
+        """Resume a canceled run, or continue a paused one with an explicit, audited continuation."""
+        body: dict[str, Any] = {}
+        if extend_budget: body['extend_budget'] = dict(extend_budget)
+        if retry_ambiguous_attempt: body['retry_ambiguous_attempt'] = True
+        return self._request(f'evaluation-runs/{quote(run_id,safe="")}/resume','POST',body,idempotency_key)
+    def candidates(self, plan_id: str, *, run_id: str | None = None, allowed_providers: list[str] | None = None, domains: list[str] | None = None):
+        """Unverified candidate configurations for a NEW plan; the saved plan is never edited."""
+        body: dict[str, Any] = {}
+        if run_id: body['run_id'] = run_id
+        if allowed_providers: body['allowed_providers'] = list(allowed_providers)
+        if domains: body['domains'] = list(domains)
+        return self._request(f'evaluation-plans/{quote(plan_id,safe="")}/candidates','POST',body)
     def review_cases(self, plan_id: str): return self._request(f'evaluation-plans/{quote(plan_id,safe="")}/review')
     def review(self, plan_id: str, case_id: str, verdict: Literal['good','bad','skip'], note=''):
         return self._request(f'evaluation-plans/{quote(plan_id,safe="")}/review','POST',{'case_id':case_id,'verdict':verdict,'note':note})
