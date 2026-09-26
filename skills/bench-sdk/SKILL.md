@@ -5,6 +5,10 @@ description: Install and verify Bench's server-side SDK for JavaScript, Python, 
 
 # Bench SDK setup
 
+Bench evaluates and improves AI systems: agents, prompts, tools, model
+configuration and hand-offs. The SDK is how Bench learns what the system is made
+of, so instrument the structure that actually runs.
+
 Read the selected language package README for its actual API. JavaScript uses
 Node.js 20+ ESM. Python, Go and Rust packages live in their named subdirectories.
 These are server clients, not browser instrumentation or OTLP collectors.
@@ -25,8 +29,8 @@ parent context through asynchronous tasks and goroutines. System name declares a
 it does not automatically discover business objectives. Only use component IDs
 read from Bench, never invented ones.
 
-Start metadata-only (`captureContent: false` or the language's equivalent). Content capture and automatic
-content capture is a separate opt-in. Production checks are on by default per system (the owner can turn them off in Bench). A setup key has a zero evaluation cap. Do not
+Start metadata-only (`captureContent: false` or the language's equivalent). Content
+capture is a separate opt-in. Production checks are on by default per system (the owner can turn them off in Bench). A setup key has a zero evaluation cap. Do not
 enable automatic evaluation, enable optional external judging, or modify caps
 as an installation step. Built-in redaction is not guaranteed anonymization.
 
@@ -137,5 +141,5 @@ Use `bench_create_api_key` for a scoped application credential. Store it in the
 project's secret environment; never echo or commit it. Instrument the actual entry
 point, run a synthetic trace and verify `bench_sdk_status`. Prepare real app tests
 and publish explicitly requested reports. The platform client manages saved
-resources; the tracing client executes real app tests and simulations. The new
-platform client requires a development source build until it is published.
+resources; the tracing client executes real app tests and simulations. Both ship
+in the published 0.2.0 packages.

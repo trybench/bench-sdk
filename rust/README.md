@@ -1,8 +1,10 @@
 # Bench Rust SDK · Beta
 
-**Beta, version 0.1.0.** Pin versions and test upgrades in staging.
+**Beta, version 0.2.1.** Pin versions and test upgrades in staging.
 
-Trace Rust applications, agents and tools. Tokio applications, Rust 1.88+.
+Bench evaluates and improves AI systems: agents, prompts, tools, model
+configuration and hand-offs. This SDK traces Rust applications, agents and tools
+so Bench can draw the system from what runs. Tokio applications, Rust 1.88+.
 Apache-2.0. Add the public crate to your application:
 
 ```sh
@@ -35,9 +37,14 @@ For streams, keep a `bench.start_span(...)` guard alive while consuming the
 stream. Call `set_output` on success, or `set_error` on failure. Dropping an
 unfinished guard records an error. Request error messages are not captured.
 
-Wrap Rig, model-client and custom application calls explicitly. Automatic
-framework adapters are not included. Set `SpanInput.component_id` using a real
-Bench prompt component to connect events to its criteria.
+Wrap Rig, model-client and custom application calls explicitly. For a framework
+that already produces finished spans (an OpenTelemetry exporter or its own
+callbacks), forward each one with `bench.record_external_span(ExternalSpan { .. })`,
+keeping its trace and span IDs; the kind is inferred from `gen_ai.*` attributes.
+The SDK does not patch frameworks itself. Set `SpanInput.component_id` using a real
+Bench prompt component to connect events to its criteria; register the prompts the
+system sends with the `register_prompts` platform operation (no GitHub connection
+needed) to obtain those IDs.
 
 `capture_content` defaults to `false`. Inputs, outputs and arbitrary attributes
 are omitted. Built-in filters remove common secrets, supported personal-data
@@ -98,8 +105,7 @@ seconds; an abruptly stopped Tokio runtime cannot finish asynchronous cleanup.
 
 Application tests record redacted content locally, even when production tracing
 is metadata-only. Use synthetic inputs and isolated test dependencies. Upload
-and paid production checks remain separate actions. Automatic framework adapters
-are coming soon.
+and paid production checks remain separate actions.
 
 ```sh
 cargo test
@@ -129,12 +135,13 @@ not zero. Do not repeat a child cost on its parent or count overlapping token
 categories twice. The SDK does not guess provider prices or a tool's own charges.
 
 The `gen_ai.*` names follow selected OpenTelemetry conventions. `bench.cost.*` and
-`bench.duration_ms` are Bench extensions. Events currently use Bench JSON over
-HTTPS; this release is not an OTLP exporter or collector.
+`bench.duration_ms` are Bench extensions. Events use Bench JSON over HTTPS; this
+crate is not an OTLP exporter or collector.
 
-## Headless platform management (development)
+## Headless platform management
 
-This branch includes a platform client for all Bench API operations. See the root
-README and bench-docs `sdk/platform.mdx` for this language's example. Use the
-development API and credentials. Existing tracing, real app evaluation and
-simulation APIs are unchanged. Platform calls do not execute the app implicitly.
+`trybench_sdk::BenchPlatform` calls every Bench API operation by name, including
+`register_prompts` and `put_context_source`; `operations()` returns the contract.
+See the root README and the [platform guide](https://docs.usebench.ai/sdk/platform)
+for this language's example. Tracing, real app evaluation and simulation APIs are
+independent of it. Platform calls do not execute the app implicitly.
