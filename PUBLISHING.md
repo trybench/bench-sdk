@@ -18,6 +18,24 @@ release. A missing package search result does not reserve its name. Each languag
 can release independently. Keep its version, tag, installation instructions and
 changelog aligned. Once published, release a new version for corrections.
 
+## Automated publishing (preferred)
+
+`.github/workflows/publish.yml` publishes on release tags through registry
+trusted publishing, with no stored tokens: `js/vX.Y.Z` to npm, `python/vX.Y.Z`
+to PyPI, `rust/vX.Y.Z` to crates.io. `go/vX.Y.Z` needs no publish step. Each
+registry must list this repository and workflow as a trusted publisher first:
+
+- npm, package `@benchai/sdk`: GitHub Actions, organization `trybench`,
+  repository `bench-sdk`, workflow `publish.yml`, no environment, allow
+  `npm publish`.
+- PyPI, project `trybench-sdk`: owner `trybench`, repository `bench-sdk`,
+  workflow `publish.yml`, environment `pypi`.
+- crates.io, crate `trybench-sdk`: repository `trybench/bench-sdk`, workflow
+  `publish.yml`, environment `crates-io`.
+
+Create the `pypi` and `crates-io` GitHub environments in the repository settings
+(no secrets needed). The manual commands below remain the fallback.
+
 ## Before publishing
 
 - Merge reviewed SDK changes after CI passes. Use the exact tested commit.
