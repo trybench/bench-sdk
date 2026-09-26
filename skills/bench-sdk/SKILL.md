@@ -73,6 +73,32 @@ Send one real request after setup and confirm the system appears under
 AI Systems with its agents, models and tools. Metadata-only capture is enough
 for discovery; do not enable content capture for it.
 
+## Register the prompts you can see
+
+Traces never carry the editable prompt template, so a runtime system has no
+prompt components until they are registered. You are inside the repository:
+find every prompt the system sends (system prompts, instructions, templates in
+code, YAML, Markdown or JSON, prompts assembled across files) and register them
+on the system with the `register_prompts` operation
+(`POST /api/ai-systems/{id}/prompts`, MCP tool `bench_register_prompts`), using
+the same key as the SDK:
+
+```json
+{"repo_full_name": "owner/repo", "branch": "main",
+ "prompts": [{"path": "src/agents/prompts/analyzer.yaml", "line": 3, "end_line": 40,
+              "name": "analyzer system prompt", "role": "system",
+              "content": "<exact template text, variables unfilled>",
+              "agent": "Analyzer agent"}]}
+```
+
+Rules: cite the real file and line; copy the text exactly, never paraphrase or
+invent; set `agent` to the agent's runtime span name so the prompt lands inside
+that agent's node; include `model` only when the account has model selection.
+The response returns component ids: put each on the spans of the model call
+that sends that prompt (`bench.component_id` / `componentId`) so runtime
+evidence links to it. Registration is idempotent per path and line, edits no
+source, starts no evaluation, and does not need a GitHub connection.
+
 For application evaluation and scripted simulations, use the APIs documented by
 the installed language package. Run synthetic cases with isolated test state.
 Report upload is an explicit step; it must not happen during ordinary tracing setup.
