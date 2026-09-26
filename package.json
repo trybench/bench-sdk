@@ -1,6 +1,6 @@
 {
   "name": "@benchai/sdk",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "type": "module",
   "description": "Trace AI applications and test their behavior with Bench",
   "license": "Apache-2.0",

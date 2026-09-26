@@ -1,6 +1,6 @@
 # Bench Go SDK · Beta
 
-**Beta, version 0.2.1.** Pin versions and test upgrades in staging.
+**Beta, version 0.2.2.** Pin versions and test upgrades in staging.
 
 Bench evaluates and improves AI systems: agents, prompts, tools, model
 configuration and hand-offs. This SDK traces Go applications, agents and tools so
@@ -8,7 +8,7 @@ Bench can draw the system from what runs. Go 1.22+. Standard library only.
 Apache-2.0. Install the public Go module:
 
 ```sh
-go get github.com/trybench/bench-sdk/go@v0.2.1
+go get github.com/trybench/bench-sdk/go@v0.2.2
 ```
 
 ```go
