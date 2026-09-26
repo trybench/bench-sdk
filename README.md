@@ -62,8 +62,18 @@ GitHub or upload prompts to discover evaluable prompt components. Pass their
 actual `componentId` in a span, or link recorded spans to a prompt in Production.
 Nested `bench.trace` calls preserve trace/parent IDs through async execution.
 
-For AI SDK, Mastra, OpenAI Agents or custom Node workflows, wrap the existing
-server call. This release does not automatically patch those frameworks.
+For frameworks that already emit OpenTelemetry spans (Vercel AI SDK
+`experimental_telemetry`, OpenAI Agents, LangChain and others), register
+`BenchSpanExporter` on the application's tracer provider instead of wrapping calls;
+Bench infers agent, model and tool spans from the GenAI attributes and draws the
+system from them. For frameworks with their own tracing events (Mastra), forward
+each finished span with `bench.recordExternalSpan(...)`, keeping its IDs. Bench
+does not patch frameworks automatically.
+
+```ts
+import { Bench, BenchSpanExporter } from '@benchai/sdk'
+provider.addSpanProcessor(new SimpleSpanProcessor(new BenchSpanExporter(bench)))
+```
 
 ## Content and lifecycle
 
@@ -91,7 +101,7 @@ endpoint. Browser instrumentation and OTLP exporter adapters are not included.
 
 Production checks run as durable background jobs, using pinned prompt criteria.
 They consume one evaluation each and share web/MCP account and key limits.
-Automatic checks require per-component opt-in and a key with a nonzero allowance.
+Production checks are on by default for every connected system, in its production environment: new interactions are checked and a failing check starts a bench. Turn either off in the system's Production tab. Checks spend evaluations from the account allowance and need a key with a nonzero allowance; a setup key cannot spend.
 Captured model output is not a reference answer. Review a failure, then add its
 expected behavior to the test library to include it in future benches.
 
