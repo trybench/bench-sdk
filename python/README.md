@@ -1,6 +1,6 @@
 # Bench Python SDK · Beta
 
-**Beta, version 0.2.1.** Pin versions and test upgrades in staging.
+**Beta, version 0.2.2.** Pin versions and test upgrades in staging.
 
 Bench evaluates and improves AI systems: agents, prompts, tools, model
 configuration and hand-offs. This SDK traces Python applications, agents and tools
