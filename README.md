@@ -101,7 +101,7 @@ endpoint. Browser instrumentation and OTLP exporter adapters are not included.
 
 Production checks run as durable background jobs, using pinned prompt criteria.
 They consume one evaluation each and share web/MCP account and key limits.
-Automatic checks require per-component opt-in and a key with a nonzero allowance.
+Production checks are on by default for every connected system, in its production environment: new interactions are checked and a failing check starts a bench. Turn either off in the system's Production tab. Checks spend evaluations from the account allowance and need a key with a nonzero allowance; a setup key cannot spend.
 Captured model output is not a reference answer. Review a failure, then add its
 expected behavior to the test library to include it in future benches.
 

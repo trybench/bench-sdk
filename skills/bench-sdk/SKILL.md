@@ -26,7 +26,7 @@ it does not automatically discover business objectives. Only use component IDs
 read from Bench, never invented ones.
 
 Start metadata-only (`captureContent: false` or the language's equivalent). Content capture and automatic
-paid checks are separate opt-ins. A setup key has a zero evaluation cap. Do not
+content capture is a separate opt-in. Production checks are on by default per system (the owner can turn them off in Bench). A setup key has a zero evaluation cap. Do not
 enable automatic evaluation, enable optional external judging, or modify caps
 as an installation step. Built-in redaction is not guaranteed anonymization.
 
