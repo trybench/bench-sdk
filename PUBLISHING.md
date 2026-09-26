@@ -26,15 +26,18 @@ to PyPI, `rust/vX.Y.Z` to crates.io. `go/vX.Y.Z` needs no publish step. Each
 registry must list this repository and workflow as a trusted publisher first:
 
 - npm, package `@benchai/sdk`: GitHub Actions, organization `trybench`,
-  repository `bench-sdk`, workflow `publish.yml`, no environment, allow
-  `npm publish`.
+  repository `bench-sdk`, workflow `publish.yml`, environment `npm` (or leave
+  empty to accept any), allow `npm publish`.
 - PyPI, project `trybench-sdk`: owner `trybench`, repository `bench-sdk`,
   workflow `publish.yml`, environment `pypi`.
 - crates.io, crate `trybench-sdk`: repository `trybench/bench-sdk`, workflow
   `publish.yml`, environment `crates-io`.
 
-Create the `pypi` and `crates-io` GitHub environments in the repository settings
-(no secrets needed). The manual commands below remain the fallback.
+Create the `npm`, `pypi` and `crates-io` GitHub environments in the repository
+settings (no secrets needed); they make each publish visible under Deployments.
+Push release tags one at a time: GitHub creates no workflow event for a push
+containing more than three tags. The workflow creates the GitHub release for each
+tag and marks it latest. The manual commands below remain the fallback.
 
 ## Before publishing
 
