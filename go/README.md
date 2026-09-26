@@ -1,12 +1,14 @@
 # Bench Go SDK · Beta
 
-**Beta, version 0.1.0.** Pin versions and test upgrades in staging.
+**Beta, version 0.2.0.** Pin versions and test upgrades in staging.
 
-Trace Go applications, agents and tools. Go 1.22+. Standard library only. Apache-2.0.
-Install the public Go module:
+Bench evaluates and improves AI systems: agents, prompts, tools, model
+configuration and hand-offs. This SDK traces Go applications, agents and tools so
+Bench can draw the system from what runs. Go 1.22+. Standard library only.
+Apache-2.0. Install the public Go module:
 
 ```sh
-go get github.com/trybench/bench-sdk/go@v0.1.0
+go get github.com/trybench/bench-sdk/go@v0.2.0
 ```
 
 ```go
@@ -34,9 +36,14 @@ The result and original error are returned unchanged. For streaming, use
 `ctx, span := client.StartSpan(ctx, input)`, defer `span.End()`, and call
 `span.SetOutput(value)` or `span.SetError()` when the operation finishes.
 
-Wrap calls in Google ADK, LangChainGo or custom applications explicitly. Automatic
-framework instrumentation is not included. Set `ComponentID` to an existing Bench
-prompt component to connect events to its saved criteria.
+Wrap calls in Google ADK, LangChainGo or custom applications explicitly. For a
+framework that already produces finished spans (an OpenTelemetry exporter or its
+own callbacks), forward each one with `client.RecordExternalSpan(bench.ExternalSpan{...})`,
+keeping its trace and span IDs; `bench.InferSpanKind` maps `gen_ai.*` attributes to
+AGENT, LLM or TOOL. The SDK does not patch frameworks itself. Set `ComponentID` to
+an existing Bench prompt component to connect events to its saved criteria;
+register the prompts the system sends with the `register_prompts` platform
+operation (no GitHub connection needed) to obtain those IDs.
 
 Content capture is off by default. To enable it, set `CaptureContent: true` and
 supply `SpanInput.Input`. Returned output is captured automatically by `Trace`.
@@ -96,8 +103,7 @@ Cleanup gets a fresh five-second context, which it must honor.
 
 Application tests record redacted content locally, even when production tracing
 is metadata-only. They do not upload reports or spend evaluation credits by
-implicitly running a judge. Use synthetic test data. Automatic framework adapters
-are coming soon.
+implicitly running a judge. Use synthetic test data.
 
 ```sh
 go test -race ./...
@@ -126,12 +132,13 @@ not zero. Do not repeat a child cost on its parent or count overlapping token
 categories twice. The SDK does not guess provider prices or a tool's own charges.
 
 The `gen_ai.*` names follow selected OpenTelemetry conventions. `bench.cost.*` and
-`bench.duration_ms` are Bench extensions. Events currently use Bench JSON over
-HTTPS; this release is not an OTLP exporter or collector.
+`bench.duration_ms` are Bench extensions. Events use Bench JSON over HTTPS; this
+package is not an OTLP exporter or collector.
 
-## Headless platform management (development)
+## Headless platform management
 
-This branch includes a platform client for all Bench API operations. See the root
-README and bench-docs `sdk/platform.mdx` for this language's example. Use the
-development API and credentials. Existing tracing, real app evaluation and
-simulation APIs are unchanged. Platform calls do not execute the app implicitly.
+`bench.NewPlatform` returns a client whose `Call` runs every Bench API operation by
+name, including `register_prompts` and `put_context_source`; `Operations()` returns
+the contract. See the root README and the [platform guide](https://docs.usebench.ai/sdk/platform)
+for this language's example. Tracing, real app evaluation and simulation APIs are
+independent of it. Platform calls do not execute the app implicitly.
