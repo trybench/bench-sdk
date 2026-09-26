@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.2.2 (beta)
+
+- Published through the tag-driven trusted-publishing workflow. No functional change from 0.2.1.
+
 ## 0.2.1 (beta)
 
 - Default API endpoint is `https://api.usebench.ai` in every client. The previous default pointed at a host Bench no longer controls; set `endpoint` explicitly if you pin an older version.
