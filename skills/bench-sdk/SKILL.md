@@ -99,6 +99,23 @@ that sends that prompt (`bench.component_id` / `componentId`) so runtime
 evidence links to it. Registration is idempotent per path and line, edits no
 source, starts no evaluation, and does not need a GitHub connection.
 
+## Write down what the system is for
+
+Bench judges results against the system's purpose and rules, so after the
+system exists, record them from the repository with `put_context_source`
+(`PUT /api/ai-systems/{id}/context/sources`, MCP `bench_put_context_source`),
+reading `expected_version` from `get_system_context` first:
+
+- **Purpose** (category `business_intent`, kind `document`, scope `system`): who
+  the system serves, what it does, what a good result looks like. One short text.
+- **Supporting context**, one source each: policies and constraints the system
+  must follow as `rules_constraints`; example conversations or expected results
+  as `examples_feedback`; architecture notes as `system_structure`.
+
+Cite the files each statement came from and phrase it as derived from the
+repository. The owner reviews and can edit or add more later in Bench. Never
+invent business policy, reference answers or scores that are not in the files.
+
 For application evaluation and scripted simulations, use the APIs documented by
 the installed language package. Run synthetic cases with isolated test state.
 Report upload is an explicit step; it must not happen during ordinary tracing setup.
