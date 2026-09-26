@@ -88,6 +88,65 @@ impl SpanInput {
         self
     }
 }
+/// A finished span produced by another tracer: an OpenTelemetry exporter or a
+/// framework callback. IDs, timing and parent links come from that tracer, so
+/// Bench rebuilds the agent/model/tool tree the framework actually executed.
+/// This is the framework-agnostic path to SDK-first discovery.
+#[derive(Clone, Default)]
+pub struct ExternalSpan {
+    /// 32 lowercase hex characters.
+    pub trace_id: String,
+    /// 16 lowercase hex characters.
+    pub span_id: String,
+    pub parent_span_id: Option<String>,
+    pub name: String,
+    /// LLM | TOOL | CHAIN | RETRIEVER | AGENT | EMBEDDING; inferred from GenAI
+    /// attributes when `None`.
+    pub kind: Option<String>,
+    pub model: Option<String>,
+    /// RFC 3339 timestamps from the original tracer.
+    pub started_at: String,
+    pub ended_at: String,
+    /// "ok" (default) or "error".
+    pub status: String,
+    pub attributes: Map<String, Value>,
+    pub input: Option<Value>,
+    pub output: Option<Value>,
+}
+
+fn attribute_text(attributes: &Map<String, Value>, keys: &[&str]) -> String {
+    keys.iter()
+        .filter_map(|key| attributes.get(*key).and_then(Value::as_str))
+        .map(str::trim)
+        .find(|value| !value.is_empty())
+        .map(str::to_lowercase)
+        .unwrap_or_default()
+}
+
+/// Map OpenTelemetry GenAI semantic conventions to a Bench span kind. Every
+/// supported framework that emits GenAI spans uses these attributes, so
+/// discovery does not depend on the framework or language.
+pub fn infer_span_kind(attributes: &Map<String, Value>) -> &'static str {
+    // The operation name is authoritative: frameworks such as Pydantic AI stamp
+    // gen_ai.agent.name on every span of a run, including model calls and tools.
+    match attribute_text(attributes, &["gen_ai.operation.name"]).as_str() {
+        "chat" | "text_completion" | "generate_content" => return "LLM",
+        "execute_tool" => return "TOOL",
+        "embeddings" => return "EMBEDDING",
+        "invoke_agent" | "create_agent" => return "AGENT",
+        _ => {}
+    }
+    if !attribute_text(attributes, &["gen_ai.tool.name"]).is_empty() {
+        "TOOL"
+    } else if !attribute_text(attributes, &["gen_ai.request.model"]).is_empty() {
+        "LLM"
+    } else if !attribute_text(attributes, &["gen_ai.agent.name"]).is_empty() {
+        "AGENT"
+    } else {
+        "UNKNOWN"
+    }
+}
+
 #[derive(Debug, Clone, Copy, Default)]
 pub struct Stats {
     pub queued: usize,
@@ -339,6 +398,86 @@ impl Bench {
             return Ok(());
         }
         let trace = json!({"trace_id":span.context.trace_id,"source":"bench_sdk","spans":[row]});
+        if trace.to_string().len() > 200000 {
+            return Err("Trace too large.".into());
+        }
+        let mut queue = self.inner.queue.lock().unwrap_or_else(|e| e.into_inner());
+        if queue.closed || queue.items.len() >= self.inner.options.max_queue_size {
+            queue.dropped += 1
+        } else {
+            queue.items.push_back(trace)
+        };
+        Ok(())
+    }
+    /// Queue a finished span from another tracer. Metadata-only capture and
+    /// redaction apply exactly as for `trace`. Invalid input is counted as
+    /// dropped and returned as an error; it never panics into the application.
+    pub fn record_external_span(&self, span: ExternalSpan) -> Result<(), String> {
+        let result = self.build_external(span);
+        if result.is_err() {
+            self.drop_events(1)
+        }
+        result
+    }
+    fn build_external(&self, span: ExternalSpan) -> Result<(), String> {
+        let trace_id = span.trace_id.to_lowercase();
+        let span_id = span.span_id.to_lowercase();
+        let parent = span.parent_span_id.map(|p| p.to_lowercase());
+        let hex = |value: &str, len: usize| {
+            value.len() == len
+                && value
+                    .bytes()
+                    .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+        };
+        if !hex(&trace_id, 32)
+            || !hex(&span_id, 16)
+            || parent.as_deref().is_some_and(|p| !hex(p, 16))
+        {
+            return Err("External spans need 32-hex trace and 16-hex span identifiers.".into());
+        }
+        if self.inner.options.sample_rate < 1.0 {
+            let prefix = u64::from_str_radix(&trace_id[..8], 16).unwrap_or(0) as f64;
+            if prefix / 0xFFFF_FFFFu32 as f64 >= self.inner.options.sample_rate {
+                return Ok(());
+            }
+        }
+        let kind = match span.kind.as_deref() {
+            Some(k @ ("LLM" | "TOOL" | "CHAIN" | "AGENT" | "RETRIEVER" | "EMBEDDING")) => {
+                k.to_owned()
+            }
+            _ => infer_span_kind(&span.attributes).to_owned(),
+        };
+        let mut attrs: Map<String, Value> = span
+            .attributes
+            .iter()
+            .filter(|(k, _)| self.inner.options.capture_content || privacy::metadata(k))
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
+        if let Some(env) = &self.inner.options.environment {
+            attrs.insert("bench.environment".into(), json!(env));
+        }
+        let name = self.safe(json!(span.name))?;
+        let name = name
+            .as_str()
+            .filter(|s| !s.is_empty())
+            .ok_or("Invalid name.")?;
+        let status = if span.status == "error" {
+            "error"
+        } else {
+            "ok"
+        };
+        let mut row = json!({"span_id":span_id,"name":name.chars().take(200).collect::<String>(),"kind":kind,"started_at":span.started_at,"ended_at":span.ended_at,"status":status,"attributes":self.safe(Value::Object(attrs))?});
+        if let Some(parent) = parent {
+            row["parent_span_id"] = json!(parent)
+        }
+        if let Some(model) = &span.model {
+            row["model_name"] = self.safe(json!(model))?
+        }
+        if self.inner.options.capture_content {
+            row["input_value"] = json!(self.safe(span.input.unwrap_or(Value::Null))?.to_string());
+            row["output_value"] = json!(self.safe(span.output.unwrap_or(Value::Null))?.to_string());
+        }
+        let trace = json!({"trace_id":trace_id,"source":"bench_sdk","spans":[row]});
         if trace.to_string().len() > 200000 {
             return Err("Trace too large.".into());
         }

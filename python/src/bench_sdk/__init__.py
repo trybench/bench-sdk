@@ -1,7 +1,8 @@
 """Bench server tracing. Capturing events never starts a paid evaluation."""
-from .client import Bench, Span
+from .client import Bench, Span, infer_span_kind
+from .otel import BenchSpanExporter
 
-__all__ = ["Bench", "Span", "EvaluationContext"]
+__all__ = ["Bench", "Span", "EvaluationContext", "BenchSpanExporter", "infer_span_kind"]
 
 from .evaluation import EvaluationContext
 

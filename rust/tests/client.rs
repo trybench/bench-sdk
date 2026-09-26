@@ -9,7 +9,7 @@ use std::{
     },
     thread,
 };
-use trybench_sdk::{Bench, Options, SpanInput};
+use trybench_sdk::{infer_span_kind, Bench, ExternalSpan, Options, SpanInput};
 
 #[tokio::test]
 async fn shared_privacy_contract_in_outgoing_payload() {
@@ -302,4 +302,156 @@ async fn envelope_names_and_oversized_content_are_filtered() {
         options.branch = branch.into();
         assert!(Bench::new(options).is_err());
     }
+}
+
+#[test]
+fn infer_span_kind_follows_genai_conventions() {
+    let attrs = |pairs: &[(&str, &str)]| -> serde_json::Map<String, Value> {
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), json!(v)))
+            .collect()
+    };
+    assert_eq!(
+        infer_span_kind(&attrs(&[("gen_ai.operation.name", "invoke_agent")])),
+        "AGENT"
+    );
+    assert_eq!(
+        infer_span_kind(&attrs(&[("gen_ai.agent.name", "Triage")])),
+        "AGENT"
+    );
+    assert_eq!(
+        infer_span_kind(&attrs(&[
+            ("gen_ai.operation.name", "execute_tool"),
+            ("gen_ai.tool.name", "lookup")
+        ])),
+        "TOOL"
+    );
+    assert_eq!(
+        infer_span_kind(&attrs(&[("gen_ai.request.model", "gpt-4.1")])),
+        "LLM"
+    );
+    assert_eq!(
+        infer_span_kind(&attrs(&[("gen_ai.operation.name", "embeddings")])),
+        "EMBEDDING"
+    );
+    assert_eq!(
+        infer_span_kind(&attrs(&[("http.method", "GET")])),
+        "UNKNOWN"
+    );
+}
+
+#[tokio::test]
+async fn external_spans_arrive_as_one_metadata_only_tree() {
+    let server = Server::new();
+    let mut options = server.options();
+    options.system_name = Some("Customer support".into());
+    let bench = Bench::new(options).unwrap();
+    let trace = "0000000000000000000000000000ab01".to_string();
+    let attrs = |pairs: &[(&str, Value)]| -> serde_json::Map<String, Value> {
+        pairs
+            .iter()
+            .map(|(k, v)| (k.to_string(), v.clone()))
+            .collect()
+    };
+    let started = "2025-09-16T05:20:00Z".to_string();
+    bench
+        .record_external_span(ExternalSpan {
+            trace_id: trace.clone(),
+            span_id: "0000000000000001".into(),
+            name: "invoke_agent Triage".into(),
+            started_at: started.clone(),
+            ended_at: started.clone(),
+            attributes: attrs(&[
+                ("gen_ai.operation.name", json!("invoke_agent")),
+                ("gen_ai.agent.name", json!("Triage agent")),
+                ("customer.email", json!("x@example.com")),
+            ]),
+            ..Default::default()
+        })
+        .unwrap();
+    bench
+        .record_external_span(ExternalSpan {
+            trace_id: trace.clone(),
+            span_id: "0000000000000002".into(),
+            parent_span_id: Some("0000000000000001".into()),
+            name: "chat".into(),
+            model: Some("gpt-4.1-mini".into()),
+            started_at: started.clone(),
+            ended_at: started.clone(),
+            attributes: attrs(&[
+                ("gen_ai.operation.name", json!("chat")),
+                ("gen_ai.provider.name", json!("openai")),
+                ("gen_ai.usage.input_tokens", json!(12)),
+                ("prompt", json!("secret")),
+            ]),
+            ..Default::default()
+        })
+        .unwrap();
+    bench
+        .record_external_span(ExternalSpan {
+            trace_id: trace.clone(),
+            span_id: "0000000000000003".into(),
+            parent_span_id: Some("0000000000000001".into()),
+            name: "execute_tool lookup_order".into(),
+            status: "error".into(),
+            started_at: started.clone(),
+            ended_at: started.clone(),
+            attributes: attrs(&[
+                ("gen_ai.operation.name", json!("execute_tool")),
+                ("gen_ai.tool.name", json!("lookup_order")),
+            ]),
+            ..Default::default()
+        })
+        .unwrap();
+    assert!(bench
+        .record_external_span(ExternalSpan {
+            trace_id: "not-hex".into(),
+            span_id: "0000000000000009".into(),
+            name: "bad".into(),
+            ..Default::default()
+        })
+        .is_err());
+    assert_eq!(bench.stats().queued, 3);
+    assert_eq!(bench.stats().dropped, 1);
+    bench.shutdown().await;
+    let requests = server.requests.lock().unwrap();
+    let body: Value = serde_json::from_str(&requests[0].1).unwrap();
+    assert_eq!(body["system_name"], "Customer support");
+    assert_eq!(body["capture_content"], false);
+    let spans: Vec<&Value> = body["traces"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .flat_map(|t| {
+            assert_eq!(t["trace_id"], trace);
+            t["spans"].as_array().unwrap()
+        })
+        .collect();
+    assert_eq!(spans.len(), 3);
+    let agent = spans
+        .iter()
+        .find(|s| s["span_id"] == "0000000000000001")
+        .unwrap();
+    assert_eq!(agent["kind"], "AGENT");
+    assert!(agent.get("parent_span_id").is_none());
+    assert_eq!(agent["attributes"]["gen_ai.agent.name"], "Triage agent");
+    assert!(agent["attributes"].get("customer.email").is_none());
+    assert_eq!(agent["started_at"], "2025-09-16T05:20:00Z");
+    let model = spans
+        .iter()
+        .find(|s| s["span_id"] == "0000000000000002")
+        .unwrap();
+    assert_eq!(model["kind"], "LLM");
+    assert_eq!(model["parent_span_id"], "0000000000000001");
+    assert_eq!(model["model_name"], "gpt-4.1-mini");
+    assert_eq!(model["attributes"]["gen_ai.usage.input_tokens"], 12);
+    assert!(model["attributes"].get("prompt").is_none());
+    assert!(model.get("input_value").is_none());
+    let tool = spans
+        .iter()
+        .find(|s| s["span_id"] == "0000000000000003")
+        .unwrap();
+    assert_eq!(tool["kind"], "TOOL");
+    assert_eq!(tool["status"], "error");
 }

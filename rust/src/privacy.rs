@@ -6,7 +6,7 @@ static SENSITIVE: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)authorization|cookie|password|secret|token|api.?key|email|phone|address|user.?id|(?:first|last|full).?name|card.?number").unwrap()
 });
 static METADATA: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"^(code\.(filepath|lineno)|gen_ai\.(system|provider\.name|operation\.name|request\.model|response\.model|tool\.(name|type|call\.id)|usage\.(input_tokens|output_tokens))|bench\.(component_id|environment|prompt_version|duration_ms|cost\.(usd|source|pricing_version)))$").unwrap()
+    Regex::new(r"^(code\.(filepath|lineno)|gen_ai\.(system|provider\.name|operation\.name|agent\.name|request\.model|response\.model|tool\.(name|type|call\.id)|usage\.(input_tokens|output_tokens))|bench\.(component_id|environment|prompt_version|duration_ms|cost\.(usd|source|pricing_version)))$").unwrap()
 });
 static SECRET: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"(?i)(?:bench_sk_|apikey_|sk-)[a-zA-Z0-9_-]{8,}|Bearer\s+[a-zA-Z0-9._~+/-]+")
