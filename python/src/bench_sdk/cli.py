@@ -21,7 +21,7 @@ def gate(run):
 def main():
     parser=argparse.ArgumentParser(prog='bench')
     parser.add_argument('area',choices=['eval'])
-    parser.add_argument('command',choices=['plan','run','status','watch','cancel','resume','results','compare','export','gate','review'])
+    parser.add_argument('command',choices=['plan','run','status','watch','cancel','resume','results','compare','export','gate','review','candidates'])
     parser.add_argument('id',nargs='?')
     parser.add_argument('--system',type=int,required=True)
     parser.add_argument('--api',default=os.getenv('BENCH_API_URL','https://api.usebench.ai'))
@@ -29,6 +29,9 @@ def main():
     parser.add_argument('--json',action='store_true',help='JSON is the default; watch emits JSON lines')
     parser.add_argument('--format',choices=['json','csv','markdown'],default='json')
     parser.add_argument('--output');parser.add_argument('--case');parser.add_argument('--verdict',choices=['good','bad','skip']);parser.add_argument('--note',default='')
+    parser.add_argument('--extend-cost',type=float,help='resume a budget-paused run with more USD');parser.add_argument('--extend-trials',type=int);parser.add_argument('--extend-seconds',type=float)
+    parser.add_argument('--retry-ambiguous-attempt',action='store_true',help='acknowledge that a lost attempt may have been billed and retry it once')
+    parser.add_argument('--run',help='run whose development trials inform candidates');parser.add_argument('--providers',help='comma-separated allowed providers for candidates');parser.add_argument('--domains',help='comma-separated benchmark domains for candidates')
     args=parser.parse_args()
     try:
         token=os.environ.get('BENCH_API_KEY')
@@ -41,7 +44,12 @@ def main():
             if not args.id: raise ValueError('Provide a plan or run ID')
             if args.command in ('run','resume'):
                 if not args.key: raise ValueError('Supply --key for idempotent execution')
-                result=client.run(args.id,args.key) if args.command=='run' else client.resume(args.id,args.key)
+                if args.command=='run': result=client.run(args.id,args.key)
+                else:
+                    extension={k:v for k,v in (('max_cost_usd',args.extend_cost),('max_trials',args.extend_trials),('max_duration_s',args.extend_seconds)) if v is not None}
+                    result=client.resume(args.id,args.key,extend_budget=extension or None,retry_ambiguous_attempt=args.retry_ambiguous_attempt)
+            elif args.command=='candidates':
+                result=client.candidates(args.id,run_id=args.run,allowed_providers=args.providers.split(',') if args.providers else None,domains=args.domains.split(',') if args.domains else None)
             elif args.command=='cancel': result=client.cancel(args.id)
             elif args.command=='review':
                 result=client.review(args.id,args.case,args.verdict,args.note) if args.case and args.verdict else client.review_cases(args.id)

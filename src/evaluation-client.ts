@@ -3,8 +3,11 @@ export type EvaluationDecision = 'validated_improvement' | 'observed_improvement
 export interface EvaluationPolicy {
   objective?: 'quality' | 'cost' | 'latency'; confidence?: number; power?: number;
   minimum_quality_gain?: number; quality_tolerance?: number; minimum_resource_saving?: number;
-  max_cost_ratio?: number; max_latency_ratio?: number; repetitions?: number; pilot_groups?: number;
+  max_cost_ratio?: number; max_latency_ratio?: number; repetitions?: number; confirmation_repetitions?: number; pilot_groups?: number;
 }
+export interface BudgetExtension { max_cost_usd?: number; max_trials?: number; max_duration_s?: number }
+export interface CandidateSuggestion { id: string; overrides: Record<string, unknown>; origin: string; rationale: string; evidence: Record<string, unknown>; verified: false }
+export interface CandidateSuggestions { schema_version: 2; plan_id: string; objective: string; basis: Record<string, unknown>; candidates: CandidateSuggestion[]; notes: string[]; requires_new_plan: true; confirmation_trials_used: false }
 export interface EvaluationCase {
   id: string; input: unknown; source_group_id: string;
   role?: 'development' | 'calibration' | 'confirmation'; expectedOutput?: unknown;
@@ -43,7 +46,21 @@ export class EvaluationClient {
   status(id: string) { return this.request<EvaluationRun>(`evaluation-runs/${encodeURIComponent(id)}`); }
   events(id: string, after = 0) { return this.request<{events: {cursor:number;type:string}[];status:string}>(`evaluation-runs/${encodeURIComponent(id)}/events?after=${after}`); }
   cancel(id: string) { return this.request<EvaluationRun>(`evaluation-runs/${encodeURIComponent(id)}/cancel`,'POST',{}); }
-  resume(id: string, idempotencyKey: string) { return this.request<EvaluationRun>(`evaluation-runs/${encodeURIComponent(id)}/resume`,'POST',{},idempotencyKey); }
+  /** Resume a canceled run, or continue a paused one with an explicit, audited continuation. */
+  resume(id: string, idempotencyKey: string, continuation: { extendBudget?: BudgetExtension; retryAmbiguousAttempt?: boolean } = {}) {
+    const body: Record<string, unknown> = {};
+    if (continuation.extendBudget) body.extend_budget = continuation.extendBudget;
+    if (continuation.retryAmbiguousAttempt) body.retry_ambiguous_attempt = true;
+    return this.request<EvaluationRun>(`evaluation-runs/${encodeURIComponent(id)}/resume`,'POST',body,idempotencyKey);
+  }
+  /** Unverified candidate configurations for a NEW plan; the saved plan is never edited. */
+  candidates(planId: string, options: { runId?: string; allowedProviders?: string[]; domains?: string[] } = {}) {
+    const body: Record<string, unknown> = {};
+    if (options.runId) body.run_id = options.runId;
+    if (options.allowedProviders) body.allowed_providers = options.allowedProviders;
+    if (options.domains) body.domains = options.domains;
+    return this.request<CandidateSuggestions>(`evaluation-plans/${encodeURIComponent(planId)}/candidates`,'POST',body);
+  }
   reviewCases(id: string) { return this.request<{cases:EvaluationCase[]}>(`evaluation-plans/${encodeURIComponent(id)}/review`); }
   review(id: string, caseId: string, verdict: 'good'|'bad'|'skip', note = '') { return this.request<{saved:boolean}>(`evaluation-plans/${encodeURIComponent(id)}/review`,'POST',{case_id:caseId,verdict,note}); }
 }

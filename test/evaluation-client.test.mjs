@@ -15,6 +15,14 @@ test('runtime client keeps authorization and idempotency on the same API contrac
  assert.throws(()=>new EvaluationClient('http://remote.example','secret',1),/HTTPS/);
 });
 
+test('runtime client sends explicit continuations and candidate requests',async()=>{
+ const calls=[];const client=new EvaluationClient('http://127.0.0.1:8080','scoped-test-key',42,async(url,opts)=>{calls.push({url,opts});return new Response(JSON.stringify({candidates:[]}),{status:200})});
+ await client.resume('run','k1',{extendBudget:{max_cost_usd:2}});await client.resume('run','k2',{retryAmbiguousAttempt:true});await client.resume('run','k3');
+ await client.candidates('plan',{runId:'run',allowedProviders:['google']});
+ assert.deepEqual(JSON.parse(calls[0].opts.body),{extend_budget:{max_cost_usd:2}});assert.deepEqual(JSON.parse(calls[1].opts.body),{retry_ambiguous_attempt:true});assert.deepEqual(JSON.parse(calls[2].opts.body),{});
+ assert.ok(calls[3].url.endsWith('/evaluation-plans/plan/candidates'));assert.deepEqual(JSON.parse(calls[3].opts.body),{run_id:'run',allowed_providers:['google']});
+});
+
 test('runtime client never invents a successful response on service failure',async()=>{
  const client=new EvaluationClient('https://api.example','secret',1,async()=>new Response('unavailable',{status:503}));
  await assert.rejects(client.status('run'),/503/);
