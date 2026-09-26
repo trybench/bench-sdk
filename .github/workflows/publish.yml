@@ -10,16 +10,19 @@ name: Publish
 
 on:
   push:
-    tags: ['js/v*', 'python/v*', 'rust/v*']
+    # Push release tags one at a time: GitHub creates no event for a push
+    # that contains more than three tags.
+    tags: ['js/v*', 'python/v*', 'rust/v*', 'go/v*']
 
 permissions:
   id-token: write # required for OIDC
-  contents: read
+  contents: write # creates the GitHub release for the tag
 
 jobs:
   npm:
     if: startsWith(github.ref_name, 'js/v')
     runs-on: ubuntu-latest
+    environment: npm
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -94,3 +97,20 @@ jobs:
         working-directory: rust
         env:
           CARGO_REGISTRY_TOKEN: ${{ steps.auth.outputs.token }}
+
+  release:
+    needs: [npm, pypi, crates]
+    if: always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Create the GitHub release and mark it latest
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="$GITHUB_REF_NAME"
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release edit "$TAG" --latest --draft=false
+          else
+            gh release create "$TAG" --title "$TAG" --generate-notes --latest
+          fi
