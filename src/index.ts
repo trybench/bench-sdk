@@ -38,8 +38,33 @@ export interface Span {
  attributes: Record<string, unknown>; input_value?: string; output_value?: string; model_name?: string;
 }
 interface Trace { trace_id: string; source: "bench_sdk"; spans: Span[] }
+/** A finished span produced by another tracer (OpenTelemetry, a framework callback). */
+export interface ExternalSpanInput {
+ traceId: string; spanId: string; parentSpanId?: string; name: string;
+ kind?: SpanKind | "UNKNOWN"; startedAt: string | number | Date; endedAt: string | number | Date;
+ status?: "ok" | "error"; attributes?: Record<string, unknown>; model?: string; input?: unknown; output?: unknown;
+}
+/** Map OpenTelemetry GenAI semantic conventions to a Bench span kind. Every
+ * supported framework that emits GenAI spans (OpenAI Agents, Vercel AI SDK,
+ * Mastra, LangChain, Strands, ...) uses these attributes, so discovery does
+ * not depend on the framework. */
+export function inferSpanKind(attributes: Record<string, unknown> | undefined): SpanKind | "UNKNOWN" {
+ const text = (...keys: string[]) => { for (const key of keys) { const value = attributes?.[key]; if (typeof value === "string" && value.trim()) return value.trim().toLowerCase() } return "" };
+ // The operation name is authoritative: frameworks such as Pydantic AI stamp
+ // gen_ai.agent.name on every span of a run, including model calls and tools.
+ const operation = text("gen_ai.operation.name");
+ if (operation === "chat" || operation === "text_completion" || operation === "generate_content") return "LLM";
+ if (operation === "execute_tool") return "TOOL";
+ if (operation === "embeddings") return "EMBEDDING";
+ if (operation === "invoke_agent" || operation === "create_agent") return "AGENT";
+ if (text("gen_ai.tool.name")) return "TOOL";
+ if (text("gen_ai.request.model")) return "LLM";
+ if (text("gen_ai.agent.name")) return "AGENT";
+ return "UNKNOWN";
+}
+const spanKinds = new Set(["LLM", "TOOL", "CHAIN", "RETRIEVER", "AGENT", "EMBEDDING"]);
 const sensitiveKey = /authorization|cookie|password|secret|token|api.?key|email|phone|address|user.?id|(?:first|last|full).?name|card.?number/i;
-const allowedMetadata = /^(code\.(filepath|lineno)|gen_ai\.(system|provider\.name|operation\.name|request\.model|response\.model|tool\.(name|type|call\.id)|usage\.(input_tokens|output_tokens))|bench\.(component_id|environment|prompt_version|duration_ms|cost\.(usd|source|pricing_version)))$/;
+const allowedMetadata = /^(code\.(filepath|lineno)|gen_ai\.(system|provider\.name|operation\.name|agent\.name|request\.model|response\.model|tool\.(name|type|call\.id)|usage\.(input_tokens|output_tokens))|bench\.(component_id|environment|prompt_version|duration_ms|cost\.(usd|source|pricing_version)))$/;
 function cardChecksum(digits: string): boolean {
  const sum = [...digits].reverse().map(Number).reduce((sum,n,i) => sum + (i % 2 ? n * 2 - (n > 4 ? 9 : 0) : n), 0);
  return sum > 0 && sum % 10 === 0;
@@ -112,11 +137,36 @@ export class Bench {
     evaluation.spans.push(span);
     return;
    }
-   const trace:Trace={trace_id:traceId,source:"bench_sdk",spans:[span]};
-   if(Buffer.byteLength(JSON.stringify(trace))>200000){this.dropped++;this.report("Trace too large; dropped.");return}
-   if(this.queue.length >= (this.options.maxQueueSize??200)){this.dropped++;return}
-   this.queue.push(trace);
+   this.enqueue(traceId, span);
   }catch{const evaluation=this.storage.getStore()?.evaluation;if(evaluation)evaluation.limited=true;this.dropped++;this.report("Trace could not be serialized; dropped.")}
+ }
+ private enqueue(traceId:string, span:Span){
+  const trace:Trace={trace_id:traceId,source:"bench_sdk",spans:[span]};
+  if(Buffer.byteLength(JSON.stringify(trace))>200000){this.dropped++;this.report("Trace too large; dropped.");return}
+  if(this.queue.length >= (this.options.maxQueueSize??200)){this.dropped++;return}
+  this.queue.push(trace);
+ }
+ /** Queue a finished span from another tracer (see otel.ts). IDs, timing and
+  * parent links come from that tracer, so Bench rebuilds the agent/tool/model
+  * tree the framework actually executed. Kind is inferred from GenAI
+  * attributes when none was set. Metadata-only capture and redaction apply
+  * exactly as for trace(). Invalid input is dropped, never thrown. */
+ recordExternalSpan(input:ExternalSpanInput):void{
+  if(this.closed)return;
+  try{
+   const traceId=input.traceId.toLowerCase(),spanId=input.spanId.toLowerCase(),parent=input.parentSpanId?.toLowerCase();
+   if(!/^[0-9a-f]{32}$/.test(traceId)||!/^[0-9a-f]{16}$/.test(spanId)||(parent!==undefined&&!/^[0-9a-f]{16}$/.test(parent)))throw new Error("External spans need 32-hex trace and 16-hex span identifiers.");
+   const sampleRate=this.options.sampleRate??1;
+   if(sampleRate<1&&parseInt(traceId.slice(0,8),16)/0xffffffff>=sampleRate)return;
+   const attributes={...(input.attributes??{})};
+   const kind=(input.kind&&spanKinds.has(input.kind)?input.kind:inferSpanKind(attributes)) as SpanKind;
+   const attrs=Object.fromEntries(Object.entries(attributes).filter(([key])=>this.options.captureContent||allowedMetadata.test(key)));
+   if(this.options.environment)attrs["bench.environment"]=this.options.environment;
+   const iso=(value:string|number|Date)=>new Date(value).toISOString();
+   const span:Span={span_id:spanId,parent_span_id:parent,name:String(this.safe(input.name)).slice(0,200),kind,started_at:iso(input.startedAt),ended_at:iso(input.endedAt),status:input.status==="error"?"error":"ok",attributes:this.safe(attrs) as Record<string,unknown>,model_name:input.model?String(this.safe(input.model)).slice(0,200):undefined};
+   if(this.options.captureContent){const content=(value:unknown)=>value===undefined?undefined:JSON.stringify(this.safe(value));span.input_value=content(input.input);span.output_value=content(input.output)}
+   this.enqueue(traceId,span);
+  }catch{this.dropped++;this.report("External span could not be captured; dropped.")}
  }
  async trace<T>(input:SpanInput,fn:()=>T|Promise<T>):Promise<T>{
   const parent=this.storage.getStore();
@@ -234,3 +284,5 @@ export type { EvaluationPolicy, EvaluationSpec, EvaluationCase, EvaluationPlan, 
 export { RuntimeGateway } from './runtime-gateway.js';
 export { BenchPlatform, PlatformError, operationCatalog } from './platform.js';
 export type { OperationId, PlatformOptions, PlatformRequest, PlatformFile } from './platform.js';
+export { BenchSpanExporter, spanToBench } from './otel.js';
+export type { ReadableSpanLike } from './otel.js';

@@ -8,8 +8,10 @@ description: Install and verify Bench's server-side SDK for JavaScript, Python, 
 Read the selected language package README for its actual API. JavaScript uses
 Node.js 20+ ESM. Python, Go and Rust packages live in their named subdirectories.
 These are server clients, not browser instrumentation or OTLP collectors.
-Install the JavaScript package with `npm install @benchai/sdk`. For native
-packages, use the supplied package or pinned source from their documentation.
+Install the package exactly as the user's Bench quick start says: it may name a
+local or preview package instead of the public registry. Otherwise the JavaScript
+package is `npm install @benchai/sdk` and native packages use the supplied
+package or pinned source from their documentation.
 
 Use the repository, branch, endpoint and key supplied by the user's Bench quick
 start. Write the key only into an existing gitignored server environment file.
@@ -37,6 +39,39 @@ Report changed files, test outcome, missing credentials and actual limitations.
 Never describe recorded runtime metadata as a completed benchmark or treat a
 model judgment as a verified golden label. Publication or deployment requires
 the user's separate authorization.
+
+## Discover the system from what actually runs
+
+Bench draws the AI system (agents, model calls, tools, hand-offs) from the spans
+it receives, so instrument the structure, not just one call. Decide by framework:
+
+1. **Framework that emits OpenTelemetry GenAI spans** (OpenAI Agents, Strands,
+   Pydantic AI, LangChain/LangGraph with OTel instrumentation, CrewAI, LlamaIndex,
+   Google ADK, AutoGen, Vercel AI SDK `experimental_telemetry`, and any OpenInference
+   or OpenLLMetry instrumentor): do not wrap calls by hand. Attach the bridge to the
+   framework's tracer provider and Bench infers agent/model/tool kinds from the
+   `gen_ai.*` attributes.
+   - Python: `from bench_sdk.otel import attach; attach(bench)` (or
+     `attach(bench, provider)` when the framework owns its provider, e.g.
+     `StrandsTelemetry().tracer_provider`). Pydantic AI also needs
+     `Agent.instrument_all()`.
+   - TypeScript: `new BenchSpanExporter(bench)` as a span exporter on the app's
+     `@opentelemetry/sdk-trace-*` provider. No OpenTelemetry dependency is added by
+     Bench; the exporter is structurally typed.
+2. **Framework with its own tracing events but no OpenTelemetry** (Mastra
+   observability exporters, LangChain callback handlers): write a small exporter
+   that forwards each finished span to `recordExternalSpan` /
+   `record_external_span` / `RecordExternalSpan` / `record_external_span`, keeping
+   the framework's trace and span IDs (hash non-hex IDs to 32/16 hex) and mapping
+   its span types to `AGENT`, `LLM`, `TOOL`, `CHAIN`. Set `gen_ai.agent.name`,
+   `gen_ai.request.model`, `gen_ai.provider.name`, `gen_ai.tool.name` when known.
+3. **Custom code, no framework**: nest the language's trace wrapper. An `AGENT`
+   span per agent or workflow, an `LLM` span per model call (pass the model), a
+   `TOOL` span per tool execution. Nested spans give Bench the hand-off edges.
+
+Send one real request after setup and confirm the system appears under
+AI Systems with its agents, models and tools. Metadata-only capture is enough
+for discovery; do not enable content capture for it.
 
 For application evaluation and scripted simulations, use the APIs documented by
 the installed language package. Run synthetic cases with isolated test state.

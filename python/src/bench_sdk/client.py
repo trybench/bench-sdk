@@ -17,13 +17,47 @@ from typing import Any, Callable, Iterator
 from urllib.parse import urlsplit
 
 _SENSITIVE = re.compile(r"authorization|cookie|password|secret|token|api.?key|email|phone|address|user.?id|(?:first|last|full).?name|card.?number", re.I)
-_METADATA = re.compile(r"^(code\.(filepath|lineno)|gen_ai\.(system|provider\.name|operation\.name|request\.model|response\.model|tool\.(name|type|call\.id)|usage\.(input_tokens|output_tokens))|bench\.(component_id|environment|prompt_version|duration_ms|cost\.(usd|source|pricing_version)))$")
+_METADATA = re.compile(r"^(code\.(filepath|lineno)|gen_ai\.(system|provider\.name|operation\.name|agent\.name|request\.model|response\.model|tool\.(name|type|call\.id)|usage\.(input_tokens|output_tokens))|bench\.(component_id|environment|prompt_version|duration_ms|cost\.(usd|source|pricing_version)))$")
 _SECRETS = re.compile(r"(?:bench_sk_|apikey_|sk-)[a-zA-Z0-9_-]{8,}|Bearer\s+[a-zA-Z0-9._~+/-]+", re.I)
 _EMAIL = re.compile(r"(?<![a-z0-9.!#$%&'*+/=?^_`{|}~-])[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+", re.I)
 _PHONE = re.compile(r"\+\d[\d ()-]{8,}\d")
 _IP = re.compile(r"\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b")
 _CARD = re.compile(r"\b(?:[0-9]{4}(?:[ -][0-9]{4}){3}[ -][0-9]{3}|[0-9]{4}(?:[ -][0-9]{4}){3}|[0-9]{4}[ -][0-9]{6}[ -][0-9]{5}|[0-9]{13,19})\b")
 _KINDS = {"LLM", "TOOL", "CHAIN", "RETRIEVER", "AGENT", "EMBEDDING"}
+_HEX_TRACE = re.compile(r"^[0-9a-f]{32}$")
+_HEX_SPAN = re.compile(r"^[0-9a-f]{16}$")
+def infer_span_kind(attributes: dict | None) -> str:
+    """Map OpenTelemetry GenAI semantic conventions to a Bench span kind.
+
+    Every framework that emits GenAI spans (OpenAI Agents, Strands, LangChain,
+    Pydantic AI, CrewAI, LlamaIndex, ADK, AutoGen, ...) uses these attributes,
+    so discovery does not depend on the framework or on Bench-specific kinds.
+    """
+    attrs = attributes or {}
+    def text(*keys: str) -> str:
+        for key in keys:
+            value = attrs.get(key)
+            if isinstance(value, str) and value.strip():
+                return value.strip().lower()
+        return ""
+    # The operation name is authoritative: frameworks such as Pydantic AI stamp
+    # gen_ai.agent.name on every span of a run, including model calls and tools.
+    operation = text("gen_ai.operation.name")
+    if operation in ("chat", "text_completion", "generate_content"):
+        return "LLM"
+    if operation == "execute_tool":
+        return "TOOL"
+    if operation == "embeddings":
+        return "EMBEDDING"
+    if operation in ("invoke_agent", "create_agent"):
+        return "AGENT"
+    if text("gen_ai.tool.name"):
+        return "TOOL"
+    if text("gen_ai.request.model"):
+        return "LLM"
+    if text("gen_ai.agent.name"):
+        return "AGENT"
+    return "UNKNOWN"
 
 
 def _ip(match: re.Match) -> str:
@@ -182,17 +216,10 @@ class Bench:
             if self._capture or evaluation is not None:
                 row["input_value"] = json.dumps(self._safe(span.input), ensure_ascii=False, allow_nan=False)
                 row["output_value"] = json.dumps(self._safe(span.output), ensure_ascii=False, allow_nan=False)
-            trace = {"trace_id": trace_id, "source": "bench_sdk", "spans": [row]}
-            if len(json.dumps(trace).encode()) > 200000:
-                raise ValueError("Trace too large")
             if evaluation is not None:
                 evaluation.finish(row)
                 return
-            with self._lock:
-                if self._closed or len(self._queue) >= self._max:
-                    self._dropped += 1
-                else:
-                    self._queue.append(trace)
+            self._enqueue(trace_id, row)
         except Exception:
             if evaluation is not None:
                 evaluation.finish(None)
@@ -200,6 +227,56 @@ class Bench:
             with self._lock:
                 self._dropped += 1
             self._report("Trace could not be captured; dropped.")
+
+    def _enqueue(self, trace_id: str, row: dict) -> None:
+        trace = {"trace_id": trace_id, "source": "bench_sdk", "spans": [row]}
+        if len(json.dumps(trace).encode()) > 200000:
+            raise ValueError("Trace too large")
+        with self._lock:
+            if self._closed or len(self._queue) >= self._max:
+                self._dropped += 1
+            else:
+                self._queue.append(trace)
+
+    def record_external_span(self, *, trace_id: str, span_id: str, name: str, started_at: str, ended_at: str,
+                             parent_span_id: str | None = None, kind: str | None = None, status: str = "ok",
+                             attributes: dict | None = None, model: str | None = None,
+                             input: Any = None, output: Any = None) -> None:
+        """Queue a finished span produced by another tracer.
+
+        This is the entry point for framework telemetry (see bench_sdk.otel):
+        IDs, timing and parent links come from the original tracer, so Bench
+        rebuilds the same agent/tool/model tree the framework executed. Kind is
+        inferred from GenAI attributes when the tracer did not set a Bench kind.
+        Metadata-only capture and redaction apply exactly as for trace().
+        """
+        try:
+            trace_id, span_id = trace_id.lower(), span_id.lower()
+            parent = parent_span_id.lower() if parent_span_id else None
+            if not _HEX_TRACE.fullmatch(trace_id) or not _HEX_SPAN.fullmatch(span_id) or (parent and not _HEX_SPAN.fullmatch(parent)):
+                raise ValueError("External spans need 32-hex trace and 16-hex span identifiers.")
+            if self._sample < 1 and int(trace_id[:8], 16) / 0xFFFFFFFF >= self._sample:
+                return
+            attributes = dict(attributes or {})
+            resolved = kind if kind in _KINDS else infer_span_kind(attributes)
+            attrs = {k: v for k, v in attributes.items() if self._capture or _METADATA.fullmatch(str(k))}
+            if self._environment:
+                attrs["bench.environment"] = self._environment
+            row = {"span_id": span_id, "name": str(self._safe(name))[:200], "kind": resolved,
+                   "started_at": started_at, "ended_at": ended_at, "status": "error" if status == "error" else "ok",
+                   "attributes": self._safe(attrs)}
+            if parent:
+                row["parent_span_id"] = parent
+            if model:
+                row["model_name"] = str(self._safe(model))[:200]
+            if self._capture:
+                row["input_value"] = json.dumps(self._safe(input), ensure_ascii=False, allow_nan=False)
+                row["output_value"] = json.dumps(self._safe(output), ensure_ascii=False, allow_nan=False)
+            self._enqueue(trace_id, row)
+        except Exception:
+            with self._lock:
+                self._dropped += 1
+            self._report("External span could not be captured; dropped.")
 
     async def evaluate_system(self, **options) -> dict:
         """Run application cases locally. Returns a redacted report; no implicit upload."""

@@ -144,3 +144,23 @@ This branch includes a platform client for all Bench API operations. See the roo
 README and bench-docs `sdk/platform.mdx` for this language's example. Use the
 development API and credentials. Existing tracing, real app evaluation and
 simulation APIs are unchanged. Platform calls do not execute the app implicitly.
+
+## Frameworks: OpenTelemetry bridge
+
+Frameworks that emit OpenTelemetry GenAI spans (OpenAI Agents, Strands, Pydantic AI,
+LangChain/LangGraph instrumentation, CrewAI, LlamaIndex, Google ADK, AutoGen) need
+no wrapping. Attach the exporter and Bench draws agents, model calls and tools
+from what actually ran, metadata-only:
+
+```python
+from bench_sdk import Bench
+from bench_sdk.otel import attach
+
+bench = Bench(api_key=..., repository="owner/repo", branch="main", system_name="Support")
+attach(bench)               # global tracer provider; pass a provider to use the framework's own
+# Pydantic AI additionally: Agent.instrument_all()
+```
+
+For frameworks with their own callbacks, forward finished spans with
+`bench.record_external_span(trace_id=..., span_id=..., parent_span_id=..., name=..., kind=None,
+started_at=..., ended_at=..., attributes={...})`; the kind is inferred from `gen_ai.*` attributes.
