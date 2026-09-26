@@ -110,3 +110,24 @@ class OpenTelemetryBridgeTest(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class OpenTelemetryErrorDetailsTest(unittest.TestCase):
+    def test_failed_spans_keep_their_status_description_and_exception(self):
+        span = fake_span(0x1, 0x2, "chat claude-sonnet-4-5", {"gen_ai.request.model": "claude-sonnet-4-5"}, error=True)
+        span.status = SimpleNamespace(status_code=SimpleNamespace(name="ERROR"), description="Rate limited by provider")
+        span.events = [
+            SimpleNamespace(name="exception", attributes={"exception.type": "RateLimitError", "exception.message": "429 Too Many Requests", "exception.stacktrace": "secret frames"}),
+            SimpleNamespace(name="other", attributes={"exception.message": "ignored"}),
+        ]
+        record = span_to_bench(span)
+        self.assertEqual(record["status"], "error")
+        self.assertEqual(record["attributes"]["error.message"], "Rate limited by provider")
+        self.assertEqual(record["attributes"]["exception.type"], "RateLimitError")
+        self.assertEqual(record["attributes"]["exception.message"], "429 Too Many Requests")
+        self.assertNotIn("exception.stacktrace", record["attributes"])
+
+    def test_healthy_spans_do_not_gain_error_attributes(self):
+        span = fake_span(0x1, 0x3, "chat", {"gen_ai.request.model": "gpt-4.1"})
+        span.status = SimpleNamespace(status_code=SimpleNamespace(name="OK"), description="fine")
+        self.assertNotIn("error.message", span_to_bench(span)["attributes"])

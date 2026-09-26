@@ -26,7 +26,23 @@ def span_to_bench(span: Any) -> dict:
     parent = getattr(span, "parent", None)
     attributes = dict(getattr(span, "attributes", None) or {})
     kind = attributes.pop("bench.kind", None)
-    status = getattr(getattr(span, "status", None), "status_code", None)
+    status_obj = getattr(span, "status", None)
+    status = getattr(status_obj, "status_code", None)
+    failed = getattr(status, "name", "") == "ERROR"
+    if failed:
+        # Keep what went wrong with the span: the status description and the
+        # recorded exception, so Bench can show the error, not just a flag.
+        description = getattr(status_obj, "description", None)
+        if isinstance(description, str) and description.strip():
+            attributes.setdefault("error.message", description.strip()[:2000])
+        for event in getattr(span, "events", None) or []:
+            if getattr(event, "name", "") != "exception":
+                continue
+            event_attributes = dict(getattr(event, "attributes", None) or {})
+            for key in ("exception.type", "exception.message"):
+                value = event_attributes.get(key)
+                if isinstance(value, str) and value.strip():
+                    attributes.setdefault(key, value.strip()[:2000])
     model = attributes.get("gen_ai.request.model")
     return {
         "trace_id": format(context.trace_id, "032x"),
@@ -36,7 +52,7 @@ def span_to_bench(span: Any) -> dict:
         "kind": kind if isinstance(kind, str) else None,
         "started_at": _iso(getattr(span, "start_time", None)),
         "ended_at": _iso(getattr(span, "end_time", None)),
-        "status": "error" if getattr(status, "name", "") == "ERROR" else "ok",
+        "status": "error" if failed else "ok",
         "attributes": attributes,
         "model": model if isinstance(model, str) else None,
     }

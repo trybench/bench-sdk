@@ -111,6 +111,11 @@ reading `expected_version` from `get_system_context` first:
 - **Supporting context**, one source each: policies and constraints the system
   must follow as `rules_constraints`; example conversations or expected results
   as `examples_feedback`; architecture notes as `system_structure`.
+- **Models and usage** (also `system_structure`): which model each prompt runs
+  on, the provider, expected monthly request volume and typical input and
+  output sizes. Bench uses this to estimate cost, compare models and propose
+  cheaper options before production traffic exists. Estimate from code and
+  configuration when nothing is documented, and say that it is an estimate.
 
 Cite the files each statement came from and phrase it as derived from the
 repository. The owner reviews and can edit or add more later in Bench. Never

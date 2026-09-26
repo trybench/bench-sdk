@@ -63,3 +63,21 @@ test('invalid identifiers are dropped, explicit bench.kind wins, old parentSpanI
  assert.equal('bench.kind' in converted.attributes, false);
  await bench.shutdown();
 });
+
+test('failed spans keep their status message and recorded exception, not the stack', () => {
+ const span = otelSpan('a'.repeat(32), '2'.repeat(16), 'chat claude-sonnet-4-5', { 'gen_ai.request.model': 'claude-sonnet-4-5' }, undefined, true);
+ span.status = { code: 2, message: 'Rate limited by provider' };
+ span.events = [
+  { name: 'exception', attributes: { 'exception.type': 'RateLimitError', 'exception.message': '429 Too Many Requests', 'exception.stacktrace': 'secret frames' } },
+  { name: 'other', attributes: { 'exception.message': 'ignored' } },
+ ];
+ const record = spanToBench(span);
+ assert.equal(record.status, 'error');
+ assert.equal(record.attributes['error.message'], 'Rate limited by provider');
+ assert.equal(record.attributes['exception.type'], 'RateLimitError');
+ assert.equal(record.attributes['exception.message'], '429 Too Many Requests');
+ assert.equal(record.attributes['exception.stacktrace'], undefined);
+ const healthy = otelSpan('a'.repeat(32), '3'.repeat(16), 'chat', { 'gen_ai.request.model': 'gpt-4.1' });
+ healthy.status = { code: 1, message: 'fine' };
+ assert.equal(spanToBench(healthy).attributes['error.message'], undefined);
+});

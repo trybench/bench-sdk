@@ -16,8 +16,9 @@ export interface ReadableSpanLike {
  parentSpanId?: string;
  startTime: HrTime;
  endTime: HrTime;
- status: { code: number };
+ status: { code: number; message?: string };
  attributes: Record<string, unknown>;
+ events?: { name: string; attributes?: Record<string, unknown> }[];
 }
 const toMillis = ([seconds, nanos]: HrTime) => seconds * 1000 + nanos / 1e6;
 
@@ -26,6 +27,21 @@ export function spanToBench(span: ReadableSpanLike): ExternalSpanInput {
  const attributes = { ...span.attributes };
  const kind = attributes['bench.kind'];
  delete attributes['bench.kind'];
+ const failed = span.status?.code === 2; // SpanStatusCode.ERROR
+ if (failed) {
+  // Keep what went wrong: the status message and the recorded exception, so
+  // Bench can show the error rather than just an error flag.
+  const clip = (value: unknown) => (typeof value === 'string' && value.trim() ? value.trim().slice(0, 2000) : undefined);
+  const message = clip(span.status?.message);
+  if (message && attributes['error.message'] === undefined) attributes['error.message'] = message;
+  for (const event of span.events ?? []) {
+   if (event.name !== 'exception') continue;
+   for (const key of ['exception.type', 'exception.message'] as const) {
+    const value = clip(event.attributes?.[key]);
+    if (value && attributes[key] === undefined) attributes[key] = value;
+   }
+  }
+ }
  const model = attributes['gen_ai.request.model'];
  return {
   traceId: context.traceId, spanId: context.spanId,
@@ -33,7 +49,7 @@ export function spanToBench(span: ReadableSpanLike): ExternalSpanInput {
   name: span.name,
   kind: typeof kind === 'string' ? (kind as ExternalSpanInput['kind']) : undefined,
   startedAt: toMillis(span.startTime), endedAt: toMillis(span.endTime),
-  status: span.status?.code === 2 ? 'error' : 'ok', // SpanStatusCode.ERROR
+  status: failed ? 'error' : 'ok',
   attributes, model: typeof model === 'string' ? model : undefined,
  };
 }
