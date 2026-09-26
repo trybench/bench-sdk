@@ -97,7 +97,7 @@ func New(options Options) (*Client, error) {
 		}
 	}
 	if options.Endpoint == "" {
-		options.Endpoint = "https://api.trybench.ai"
+		options.Endpoint = "https://api.usebench.ai"
 	}
 	u, err := url.Parse(options.Endpoint)
 	if err != nil || u.Hostname() == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" || !(u.Scheme == "https" || (u.Scheme == "http" && (u.Hostname() == "localhost" || u.Hostname() == "127.0.0.1" || u.Hostname() == "::1"))) {

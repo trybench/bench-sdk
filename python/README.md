@@ -1,8 +1,10 @@
 # Bench Python SDK · Beta
 
-**Beta, version 0.1.0.** Pin versions and test upgrades in staging.
+**Beta, version 0.2.1.** Pin versions and test upgrades in staging.
 
-Trace Python applications, agents and tools without changing their behavior.
+Bench evaluates and improves AI systems: agents, prompts, tools, model
+configuration and hand-offs. This SDK traces Python applications, agents and tools
+without changing their behavior, so Bench can draw the system from what runs.
 Python 3.10+. No third-party runtime dependencies. Apache-2.0.
 
 Install with `python -m pip install trybench-sdk`. The Python import is `bench_sdk`.
@@ -17,7 +19,7 @@ bench = Bench(
     branch="main",
     environment="staging",
     system_name="Support agent",
-    endpoint=os.environ.get("BENCH_API_BASE_URL", "https://api.trybench.ai"),
+    endpoint=os.environ.get("BENCH_API_BASE_URL", "https://api.usebench.ai"),
 )
 
 try:
@@ -36,7 +38,8 @@ await points and inherited by nested tasks. Wrap tools in nested spans with
 `kind="TOOL"`. Separate requests started outside a parent get separate trace IDs.
 
 Works with explicit wrappers around Deep Agents, LangGraph, LangChain, model
-clients and custom Python code. It does not automatically instrument framework
+clients and custom Python code. Frameworks that emit OpenTelemetry GenAI spans need
+no wrapping; see the OpenTelemetry bridge below. The SDK does not patch framework
 internals or consume a streaming result; keep the span open while reading the stream.
 
 Inputs, outputs and custom attributes are omitted by default. With permission,
@@ -47,8 +50,10 @@ Add a `redact(value)` callback for application-specific data. These rules do not
 recognize every personal detail in free text.
 
 Set `component_id` to a real prompt component from Bench to link the event to
-its criteria. Use operational attributes such as `gen_ai.usage.input_tokens`
-and `gen_ai.usage.output_tokens` for usage counts. Never invent component IDs.
+its criteria. Register the prompts the system sends with the `register_prompts`
+platform operation (no GitHub connection needed); it returns the component IDs.
+Use operational attributes such as `gen_ai.usage.input_tokens` and
+`gen_ai.usage.output_tokens` for usage counts. Never invent component IDs.
 
 The queue defaults to 200 spans. Flush explicitly at request or process lifecycle
 boundaries. Transient delivery failures retry once with unchanged IDs, then drop
@@ -102,8 +107,7 @@ are local execution, not a process sandbox or a hosted verification claim.
 
 Tests record redacted content even when production capture is metadata-only, so
 use synthetic inputs. Reports are not uploaded and paid checks are not started
-unless you take a separate explicit action. Automatic framework adapters are
-coming soon.
+unless you take a separate explicit action.
 
 Run checks from this directory:
 
@@ -135,15 +139,16 @@ not zero. Do not repeat a child cost on its parent or count overlapping token
 categories twice. The SDK does not guess provider prices or a tool's own charges.
 
 The `gen_ai.*` names follow selected OpenTelemetry conventions. `bench.cost.*` and
-`bench.duration_ms` are Bench extensions. Events currently use Bench JSON over
-HTTPS; this release is not an OTLP exporter or collector.
+`bench.duration_ms` are Bench extensions. Events use Bench JSON over HTTPS; the
+OpenTelemetry bridge consumes spans, it is not an OTLP exporter or collector.
 
-## Headless platform management (development)
+## Headless platform management
 
-This branch includes a platform client for all Bench API operations. See the root
-README and bench-docs `sdk/platform.mdx` for this language's example. Use the
-development API and credentials. Existing tracing, real app evaluation and
-simulation APIs are unchanged. Platform calls do not execute the app implicitly.
+`bench_sdk.BenchPlatform` calls every Bench API operation by name, including
+`register_prompts` and `put_context_source`; `operations()` returns the contract.
+See the root README and the [platform guide](https://docs.usebench.ai/sdk/platform)
+for this language's example. Tracing, real app evaluation and simulation APIs are
+independent of it. Platform calls do not execute the app implicitly.
 
 ## Frameworks: OpenTelemetry bridge
 
@@ -164,3 +169,5 @@ attach(bench)               # global tracer provider; pass a provider to use the
 For frameworks with their own callbacks, forward finished spans with
 `bench.record_external_span(trace_id=..., span_id=..., parent_span_id=..., name=..., kind=None,
 started_at=..., ended_at=..., attributes={...})`; the kind is inferred from `gen_ai.*` attributes.
+Failed spans keep their status description and exception type and message, never
+the stack trace.

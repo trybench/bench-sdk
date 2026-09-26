@@ -1,21 +1,27 @@
 # Bench SDKs · Beta
 
-Official clients for [Bench](https://usebench.ai). Record AI applications and
-run repeatable checks on their prompts, tools and resulting state.
+Official clients for [Bench](https://usebench.ai). Bench evaluates and improves
+AI systems: the agents, prompts, tools, model configuration and hand-offs that
+make up an application. The SDK records what actually runs so Bench can draw the
+system, measure its quality and cost, and run repeatable checks on prompts, tools
+and resulting state.
 
-**Beta, version 0.2.0.** APIs may evolve. Pin versions and test upgrades in staging.
+**Beta, version 0.2.1.** APIs may evolve. Pin versions and test upgrades in staging.
 
 | Language | Install | Guide | Example |
 | --- | --- | --- | --- |
 | TypeScript / JavaScript | `npm install @benchai/sdk` | [TypeScript and JavaScript](https://docs.usebench.ai/sdk/typescript) | [Refund simulation](https://github.com/trybench/bench-sdk/blob/main/examples/typescript/simulate-refund.mjs) |
 | Python | `python -m pip install trybench-sdk` | [Python](https://docs.usebench.ai/sdk/python) | [Refund simulation](https://github.com/trybench/bench-sdk/blob/main/python/examples/simulate_refund.py) |
-| Go | `go get github.com/trybench/bench-sdk/go@v0.2.0` | [Go](https://docs.usebench.ai/sdk/go) | [Refund simulation](https://github.com/trybench/bench-sdk/blob/main/go/examples/refund/main.go) |
+| Go | `go get github.com/trybench/bench-sdk/go@v0.2.1` | [Go](https://docs.usebench.ai/sdk/go) | [Refund simulation](https://github.com/trybench/bench-sdk/blob/main/go/examples/refund/main.go) |
 | Rust | `cargo add trybench-sdk` | [Rust](https://docs.usebench.ai/sdk/rust) | [Refund simulation](https://github.com/trybench/bench-sdk/blob/main/rust/examples/refund.rs) |
 
-All four packages support tracing, local application evaluation, scripted
-simulations and explicit report publication. They share a report format and
-privacy contract. Use explicit wrappers for your framework; more automatic
-framework adapters are coming soon.
+All four packages support tracing, external span forwarding
+(`recordExternalSpan` / `record_external_span` / `RecordExternalSpan`), local
+application evaluation, scripted simulations, explicit report publication and a
+platform client for every Bench API operation. TypeScript and Python also ship an
+OpenTelemetry bridge (`BenchSpanExporter`, `bench_sdk.otel.attach`), so frameworks
+that already emit GenAI spans need no wrapping. They share a report format and
+privacy contract.
 
 This repository contains client libraries and local test helpers. Bench's hosted
 scanning, judging, optimization and repair services are separate server software.
@@ -56,19 +62,25 @@ await bench.shutdown()
 ```
 
 `systemName` declares an application boundary. Bench creates a runtime system
-for that repository, branch and name on the first trace. It does not infer
-business intent or assert that the runtime has already been evaluated. Connect
-GitHub or upload prompts to discover evaluable prompt components. Pass their
-actual `componentId` in a span, or link recorded spans to a prompt in Production.
-Nested `bench.trace` calls preserve trace/parent IDs through async execution.
+for that repository, branch and name on the first trace and draws the runtime,
+each agent, the model calls and tools per agent and the hand-offs between agents
+from the spans it receives. It does not infer business intent or assert that the
+runtime has already been evaluated. Traces never carry the editable prompt
+template: register the prompts the system sends with the `register_prompts`
+platform operation (or the `bench_register_prompts` MCP tool) and record purpose
+and rules with `put_context_source`; no GitHub connection is needed. Pass each
+prompt's actual `componentId` in a span, or link recorded spans to a prompt in
+Production. Nested `bench.trace` calls preserve trace/parent IDs through async
+execution.
 
 For frameworks that already emit OpenTelemetry spans (Vercel AI SDK
 `experimental_telemetry`, OpenAI Agents, LangChain and others), register
 `BenchSpanExporter` on the application's tracer provider instead of wrapping calls;
 Bench infers agent, model and tool spans from the GenAI attributes and draws the
 system from them. For frameworks with their own tracing events (Mastra), forward
-each finished span with `bench.recordExternalSpan(...)`, keeping its IDs. Bench
-does not patch frameworks automatically.
+each finished span with `bench.recordExternalSpan(...)`, keeping its IDs. Spans
+that failed keep their status description and exception type and message, never
+the stack trace. Bench does not patch frameworks automatically.
 
 ```ts
 import { Bench, BenchSpanExporter } from '@benchai/sdk'
@@ -97,7 +109,9 @@ on a reused process. Delivery is not guaranteed after abrupt process exit.
 ## Checks and feedback
 
 The API retains accepted, redacted traces for 30 days. This is Bench's JSON
-endpoint. Browser instrumentation and OTLP exporter adapters are not included.
+endpoint. Browser instrumentation is not included, and the SDK does not export
+OTLP itself; `BenchSpanExporter` receives spans from your OpenTelemetry tracer
+provider and forwards them to Bench.
 
 Production checks run as durable background jobs, using pinned prompt criteria.
 They consume one evaluation each and share web/MCP account and key limits.
@@ -150,12 +164,12 @@ not zero. Do not repeat a child cost on its parent or count overlapping token
 categories twice. The SDK does not guess provider prices or a tool's own charges.
 
 The `gen_ai.*` names follow selected OpenTelemetry conventions. `bench.cost.*` and
-`bench.duration_ms` are Bench extensions. Events currently use Bench JSON over
-HTTPS; this release is not an OTLP exporter or collector.
+`bench.duration_ms` are Bench extensions. Events use Bench JSON over HTTPS; the
+OpenTelemetry bridge consumes spans, it is not an OTLP exporter or collector.
 
 ## Headless workflows
 
-Bench exposes all 135 user-facing API operations at
+Bench exposes every user-facing API operation at
 `GET https://api.usebench.ai/api/headless/operations`: setup, GitHub,
 prompts/systems, context, files/datasets, tests/criteria, evaluations/history,
 real app reports, production feedback, workspaces and billing.
@@ -178,7 +192,8 @@ are separate between environments. See the [headless guide](https://docs.usebenc
 TypeScript/Python/Rust export `BenchPlatform`; Go provides `NewPlatform`.
 `call` (`Call` in Go) accepts an operation name and `path`, `query`, `body`, or
 `form`/`files` for explicit uploads. `operations()` (`Operations()` in Go) returns
-the contract. These clients are independent of tracing and local app evaluation.
+the contract, including `register_prompts` and `put_context_source`. These clients
+are independent of tracing and local app evaluation.
 
 ```ts
 import { BenchPlatform } from '@benchai/sdk'
@@ -192,5 +207,5 @@ const context = await platform.call('get_system_context', { path: { id: 123 } })
 
 Files accept text/bytes. Errors preserve status/code/reference. Writes never retry
 automatically, redirects never forward credentials, and requests are bounded.
-The platform client ships in the published 0.2.0 packages. Source installation
+The platform client ships in the published 0.2.1 packages. Source installation
 commands are documented in the [platform SDK guide](https://docs.usebench.ai/sdk/platform#install-the-platform-clients).
