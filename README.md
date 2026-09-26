@@ -3,13 +3,13 @@
 Official clients for [Bench](https://usebench.ai). Record AI applications and
 run repeatable checks on their prompts, tools and resulting state.
 
-**Beta, version 0.1.0.** APIs may evolve. Pin versions and test upgrades in staging.
+**Beta, version 0.2.0.** APIs may evolve. Pin versions and test upgrades in staging.
 
 | Language | Install | Guide | Example |
 | --- | --- | --- | --- |
 | TypeScript / JavaScript | `npm install @benchai/sdk` | [TypeScript and JavaScript](https://docs.usebench.ai/sdk/typescript) | [Refund simulation](https://github.com/trybench/bench-sdk/blob/main/examples/typescript/simulate-refund.mjs) |
 | Python | `python -m pip install trybench-sdk` | [Python](https://docs.usebench.ai/sdk/python) | [Refund simulation](https://github.com/trybench/bench-sdk/blob/main/python/examples/simulate_refund.py) |
-| Go | `go get github.com/trybench/bench-sdk/go@v0.1.0` | [Go](https://docs.usebench.ai/sdk/go) | [Refund simulation](https://github.com/trybench/bench-sdk/blob/main/go/examples/refund/main.go) |
+| Go | `go get github.com/trybench/bench-sdk/go@v0.2.0` | [Go](https://docs.usebench.ai/sdk/go) | [Refund simulation](https://github.com/trybench/bench-sdk/blob/main/go/examples/refund/main.go) |
 | Rust | `cargo add trybench-sdk` | [Rust](https://docs.usebench.ai/sdk/rust) | [Refund simulation](https://github.com/trybench/bench-sdk/blob/main/rust/examples/refund.rs) |
 
 All four packages support tracing, local application evaluation, scripted
@@ -192,6 +192,5 @@ const context = await platform.call('get_system_context', { path: { id: 123 } })
 
 Files accept text/bytes. Errors preserve status/code/reference. Writes never retry
 automatically, redirects never forward credentials, and requests are bounded.
-The published 0.1.0 packages do not contain the platform client: build this
-source until a package including it is published. Source installation commands
-are documented in the [platform SDK guide](https://docs.usebench.ai/sdk/platform#install-the-platform-clients).
+The platform client ships in the published 0.2.0 packages. Source installation
+commands are documented in the [platform SDK guide](https://docs.usebench.ai/sdk/platform#install-the-platform-clients).
