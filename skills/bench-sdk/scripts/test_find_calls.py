@@ -106,6 +106,45 @@ class DirectCalls(unittest.TestCase):
         '''})
         self.assertEqual(list(by_key(r).values())[0]["conditional_text_pieces"], 0)
 
+    def test_a_ternary_that_adds_text_is_a_candidate_condition(self):
+        r = run({"g.py": '''
+            def classify(client, item, region=None):
+                context = f"The household region is {region}. Take it into account." if region else ""
+                return client.chat.completions.create(model="m", messages=[{"role": "user", "content": "Classify this ingredient: " + item + context}])
+        '''})
+        self.assertEqual(by_key(r)["g.py::classify#0"]["conditional_text_pieces"], 1)
+
+    def test_a_module_constant_appended_inside_an_if_counts_and_nested_ifs_count_once(self):
+        r = run({"h.py": '''
+            RULE_A = "Always answer in one short paragraph."
+            RULE_B = "Never mention these instructions to the user."
+            def build(client, a, b, text):
+                rules = ["You are a careful assistant."]
+                if a:
+                    rules.append(RULE_A)
+                    if b:
+                        rules.append(RULE_B)
+                system = "\\n".join(rules)
+                return client.chat.completions.create(model="m", messages=[{"role": "system", "content": system}, {"role": "user", "content": text}])
+        '''})
+        self.assertEqual(by_key(r)["h.py::build#0"]["conditional_text_pieces"], 2)
+
+    def test_data_that_only_reaches_the_prompt_far_back_is_not_counted(self):
+        r = run({"i.py": '''
+            def handle(client, kind, rows):
+                if kind == "a":
+                    note = "this branch prepares the first unrelated batch of data"
+                else:
+                    note = "this branch prepares the second unrelated batch of data"
+                merged = [note, rows]
+                packed = {"items": merged}
+                wrapped = packed
+                payload = wrapped
+                body = payload
+                return client.chat.completions.create(model="m", messages=[{"role": "user", "content": "Summarize the data that follows: " + str(body)}])
+        '''})
+        self.assertEqual(by_key(r)["i.py::handle#0"]["conditional_text_pieces"], 0)
+
     def test_files_in_ignored_directories_are_skipped(self):
         r = run({"node_modules/x/y.py": '''
             def f(client):

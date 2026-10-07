@@ -82,7 +82,8 @@ class Module(ast.NodeVisitor):
         self.calls: list[dict] = []
         self.constants = {
             t.id for n in getattr(tree, "body", []) if isinstance(n, ast.Assign)
-            and isinstance(n.value, (ast.Constant, ast.JoinedStr)) for t in n.targets if isinstance(t, ast.Name)
+            and ((isinstance(n.value, ast.Constant) and isinstance(n.value.value, str)) or isinstance(n.value, ast.JoinedStr))
+            for t in n.targets if isinstance(t, ast.Name)
         }
         self.visit(tree)
 
@@ -127,18 +128,24 @@ def assignments_before(fn, line: int):
             yield [st.value.func.value], ast.Tuple(elts=st.value.args, ctx=ast.Load()), st
 
 
+FEED_DEPTH = 3  # hops from the request's own arguments; further back is data, not prompt text
+
+
 def feeding(fn, expr, line: int) -> tuple[set[str], list]:
-    """Names that feed `expr` through assignments before `line`, and the feeding statements."""
-    need, used, changed = names_in(expr), set(), True
+    """Names that feed `expr` through assignments before `line` (at most FEED_DEPTH hops),
+    and the feeding statements."""
+    need, used = names_in(expr), set()
     stmts: list = []
-    while changed:
-        changed = False
+    for _ in range(FEED_DEPTH):
+        added = False
         for targets, value, st in assignments_before(fn, line):
             if id(st) not in used and any(t.id in need for t in targets):
                 used.add(id(st))
                 stmts.append((targets, value, st))
                 need |= names_in(value)
-                changed = True
+                added = True
+        if not added:
+            break
     return need, stmts
 
 
@@ -152,23 +159,29 @@ def own_text_chars(expr, stmts) -> int:
     return total
 
 
-def adds_text(node) -> bool:
+def adds_text(node, constants: set[str] = frozenset()) -> bool:
+    """literal text of some length, an f-string, or a module-level string constant"""
     return any(
-        isinstance(n, ast.JoinedStr) or (isinstance(n, ast.Constant) and isinstance(n.value, str) and len(n.value) >= 8)
+        isinstance(n, ast.JoinedStr)
+        or (isinstance(n, ast.Constant) and isinstance(n.value, str) and len(n.value) >= 8)
+        or (isinstance(n, ast.Name) and n.id in constants)
         for n in ast.walk(node)
     )
 
 
-def conditional_pieces(fn, stmts) -> int:
-    """How many feeding statements sit inside an `if` and add literal text."""
-    count = 0
+def conditional_pieces(fn, stmts, constants: set[str] = frozenset()) -> int:
+    """How many distinct `if` blocks or ternaries add literal text to a variable that feeds the prompt."""
+    guards = set()
     for node in ast.walk(fn):
         if isinstance(node, ast.If):
             inner = {id(n) for n in ast.walk(node)}
-            for targets, value, st in stmts:
-                if id(st) in inner and adds_text(value):
-                    count += 1
-    return count
+            if any(id(st) in inner and adds_text(value, constants) for _, value, st in stmts):
+                guards.add(id(node))
+        elif isinstance(node, ast.IfExp):
+            inner = {id(n) for n in ast.walk(node)}
+            if any(id(value) in inner or any(id(n) in inner for n in ast.walk(value)) for _, value, _ in stmts) and adds_text(node, constants):
+                guards.add(id(node))
+    return len(guards)
 
 
 def shape_of(site: dict) -> str:
@@ -250,7 +263,7 @@ def analyze(root: str, methods: set[str], exclude: set[str]) -> dict:
         s["record"] = {
             "file": s["rel"], "function": s["qual"], "line": line, "shape": shape_of(s),
             "kind": "direct" if direct else "wrapper", "prompt_parameters": [] if direct else params,
-            "own_text_chars": chars, "conditional_text_pieces": conditional_pieces(fn, stmts) if fn else 0,
+            "own_text_chars": chars, "conditional_text_pieces": conditional_pieces(fn, stmts, modules[s["rel"]].constants) if fn else 0,
         }
         if direct and not params and chars < OWN_TEXT_MIN:
             s["record"]["note"] = "little literal text and no parameters: the prompt comes from elsewhere (global, config, remote); read the code"
@@ -322,7 +335,7 @@ def analyze(root: str, methods: set[str], exclude: set[str]) -> dict:
                             ret = [n.value for n in ast.walk(bfn) if isinstance(n, ast.Return) and n.value is not None]
                             if ret:
                                 _, bstmts = feeding(bfn, ast.Tuple(elts=ret, ctx=ast.Load()), 10**9)
-                                builders.append({"builder": f"{rel}::{qual}", "conditional_text_pieces": conditional_pieces(bfn, bstmts)})
+                                builders.append({"builder": f"{rel}::{qual}", "conditional_text_pieces": conditional_pieces(bfn, bstmts, modules[rel].constants)})
                 if builders:
                     entry["prompt_builders"] = builders
             callers.append(entry)

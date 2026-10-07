@@ -96,7 +96,9 @@ never runs the repository): `python3 <this skill's folder>/scripts/find_calls.py
 <repo root>` (add `--json` for machine output). It lists every request site with its
 key and `shape`, says whether the site is direct or a shared helper, and for a
 helper lists its callers, what each passes, and the key and shape of each producing
-caller. It proposes; you confirm by reading the code. It cannot see dynamic dispatch
+caller. It proposes; you confirm by reading the code. Its condition counts are candidates
+(`if` blocks and ternaries that add text to the prompt) and over-report: confirm each
+against the code. It cannot see dynamic dispatch
 (prompt dictionaries, callbacks, decorators, registries), other languages, or whether
 two callers do different jobs, and it only knows common client method names (pass
 `--methods name1,name2` for others). In other languages, find the sites by reading
@@ -120,6 +122,11 @@ A call is one **job**, not one line of code. Decide as follows:
 - **Optional pieces inside one caller** (an `if` that adds a rule block, a language
   switch, a flag that picks between prompts) are **conditions** of that one call
   (section 4), not separate calls.
+- The request goes through an **injected function or callback** (a `chat` function
+  passed in, a client object chosen at start-up, a dependency container): the finder
+  sees only the client classes behind it. Register one call per function that owns a
+  prompt template and hands it to the callback, key it by that function, set
+  `key_source: "agent"`, and compute `shape` with the formula in section 2.
 - Different implementations of the same helper (an OpenAI and an Anthropic client
   class behind one interface) are model configurations of the same calls, not
   separate calls.
@@ -268,6 +275,9 @@ real builder's output. Then set `verification`:
 - `declared_only`: read from code, not run.
 - `evidence_lacking`: part of the text could not be resolved.
 
+`agent_verified` certifies the prompt text only, not that the call works: if you
+see wiring that would fail (a missing required argument, a key that does not exist)
+or a hard-coded secret, say so in `notes`, and never copy a secret into the payload.
 Bench refuses `agent_verified` without matching evidence. Fix a mismatch (a missed
 inline rule string is the usual cause) before you register.
 
