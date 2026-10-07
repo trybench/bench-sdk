@@ -41,6 +41,12 @@ and the model, even if the framework makes the final request. Rules:
   sent) is registered with `verification.level` `evidence_lacking` and a note, not
   skipped silently.
 
+A model call can also hide inside a library the application uses (a memory or
+retrieval service, an SDK helper that summarizes or extracts). Check the application's
+dependencies that take a model or an API key; if the library's code is in the
+repository or installed, read it and register the call. If you cannot read it, name
+the library in `notes` so the gap is visible.
+
 Find every place the code sends a request to a model (`.create(`, `generateText`,
 `client.chat`, an agent `.run`, a framework's model call). Skip offline scripts
 unless they matter in production: mark those `scope: "offline_script"`.

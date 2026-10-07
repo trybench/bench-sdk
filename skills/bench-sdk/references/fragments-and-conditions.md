@@ -9,8 +9,11 @@ A call is a list of `fragments`, in the order the code sends them. Each has a
 
 - `kind: "text"`: prompt text. `text` is the string the model receives with every
   variable written as `{name}`.
-- `kind: "runtime_value"`: a message with no source text that the test case supplies
-  (the user's turn is usually this). Send no `text`.
+- `kind: "runtime_value"`: a message with no source text that the test case supplies.
+  Send no `text`. Use it when the code sends the incoming value as the whole message
+  (the user's question, a forwarded input) with no literal words around it.
+  If the code wraps the value in its own words (`f"Task: {task}"`), the message has
+  text: use `kind: "text"` with a `{name}` variable. Never both for one message.
 - `kind: "constant"`: text that only feeds a variable of another fragment (a shared
   few-shot block). Bind it with `variables[].bound_to_fragment`; it is never sent
   on its own.

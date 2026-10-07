@@ -41,10 +41,21 @@ real builder's output. Then set `verification`:
 - `declared_only`: read from code, not run.
 - `evidence_lacking`: part of the text could not be resolved.
 
-`agent_verified` means you obtained the prompt text by running or evaluating the
-code that builds it and compared the result. If you only extracted string literals and
-checked them against themselves, or retyped text instead of extracting it, use
-`declared_only`. It certifies the prompt text only, not that the call works: if you
+Decide the level with one question: **could your check have failed?**
+- `agent_verified` needs a check that could have caught a wrong registration. You
+  executed code that assembles the text (a builder function, a template with
+  interpolation or concatenation, the call itself against a fake client) with sample
+  inputs, and compared its output to your fragments, state by state.
+- If the text is a plain literal that you copied out and "checked" against the same
+  literal, the check cannot fail: `declared_only`. The same holds when you retyped the
+  text instead of extracting it, or evaluated only some of the pieces.
+- Evaluating a template literal or f-string with sample values and comparing it to the
+  fragment with its `{name}` placeholders filled in counts as running the code.
+- Framework-added text you did not see, or a remote prompt, caps the level at
+  `declared_only` or `evidence_lacking` whatever you ran.
+
+Whichever level you choose, `verification.evidence.method` says exactly what you ran
+or read. It certifies the prompt text only, not that the call works: if you
 see wiring that would fail (a missing required argument, a key that does not exist)
 or a hard-coded secret, say so in `notes`, and never copy a secret into the payload.
 Bench refuses `agent_verified` without matching evidence. Fix a mismatch (a missed
