@@ -184,8 +184,8 @@ when you obtained the text by running or evaluating code, `"source_text"` when y
 only read it from the source. Never paraphrase.
 
 - Python: import the builder and call it with simple stand-ins; no network or
-  model call is needed. Keepr-style apps can be captured by running the call with a
-  fake client that records `messages`.
+  model call is needed. Apps that call a model client directly can be captured by running the call
+  with a fake client that records `messages`.
 - TypeScript or JavaScript: extract the string expression (template literal,
   concatenation, builder function) into a scratch file and run it with `tsx` or
   `node`. Run it as TypeScript when the snippet has type syntax (`as string`).
