@@ -93,14 +93,34 @@ separately is evaluated as two partial calls.
 
 Find every place the code sends a request to a model (`.create(`, `generateText`,
 `client.chat`, an agent `.run`, a framework's model call). Skip offline scripts
-unless they matter in production: mark those `scope: "offline_script"`. If one
-function builds the prompt for several calls, or one call takes several prompts as
-an argument, that is one call with conditions (below), not several calls.
+unless they matter in production: mark those `scope: "offline_script"`.
+
+A call is one **job**, not one line of code. Decide as follows:
+
+- The request site builds its messages from its own literal text, with parameters
+  only as data: one call.
+- The request site is a **shared helper** (its messages come from its parameters,
+  e.g. `ask(system_prompt, user_text)`): list every function that calls it and what
+  each passes. Callers that do different jobs are **separate calls, one per
+  producing caller function**, each with its own key built from the caller (for
+  example `app.py::summarize#0`, `app.py::translate#0`) and a `notes` entry that
+  they share a request site. A caller that only forwards its own parameter on is
+  not a call: follow the chain to its callers.
+- **Optional pieces inside one caller** (an `if` that adds a rule block, a language
+  switch, a flag that picks between prompts) are **conditions** of that one call
+  (section 4), not separate calls.
+- Different implementations of the same helper (an OpenAI and an Anthropic client
+  class behind one interface) are model configurations of the same calls, not
+  separate calls.
+- If you cannot tell whether two callers do different jobs (a `mode` argument that
+  changes the task), read the code and decide by the task the model is asked to do;
+  say what you decided in `notes`.
 
 ### 2. Give each call a code-derived key
 
 `key` is `<repo-relative file>::<qualified function>#<ordinal of the model call in
-that function>`, for example `src/services/recipe.py::extract_recipe#0`. Derive it
+that function>` (for a shared helper, the producing caller's function and the
+ordinal of its call to the helper), for example `src/services/recipe.py::extract_recipe#0`. Derive it
 from the code, never from a name you chose, a line number, or a prompt title: Bench
 uses it to recognize the same call after edits. Also send `shape`: a short
 fingerprint of the call expression (its keyword argument names, model expression,
