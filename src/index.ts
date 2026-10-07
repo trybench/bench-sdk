@@ -64,7 +64,7 @@ export function inferSpanKind(attributes: Record<string, unknown> | undefined): 
 }
 const spanKinds = new Set(["LLM", "TOOL", "CHAIN", "RETRIEVER", "AGENT", "EMBEDDING"]);
 const sensitiveKey = /authorization|cookie|password|secret|token|api.?key|email|phone|address|user.?id|(?:first|last|full).?name|card.?number/i;
-const allowedMetadata = /^(code\.(filepath|lineno)|gen_ai\.(system|provider\.name|operation\.name|agent\.name|request\.model|response\.model|tool\.(name|type|call\.id)|usage\.(input_tokens|output_tokens))|bench\.(component_id|environment|prompt_version|duration_ms|cost\.(usd|source|pricing_version)))$/;
+const allowedMetadata = /^(code\.(filepath|lineno)|gen_ai\.(system|provider\.name|operation\.name|agent\.name|request\.(model|temperature|top_p|top_k|max_tokens)|response\.model|tool\.(name|type|call\.id)|usage\.(input_tokens|output_tokens))|bench\.(component_id|environment|prompt_version|duration_ms|cost\.(usd|source|pricing_version)))$/;
 function cardChecksum(digits: string): boolean {
  const sum = [...digits].reverse().map(Number).reduce((sum,n,i) => sum + (i % 2 ? n * 2 - (n > 4 ? 9 : 0) : n), 0);
  return sum > 0 && sum % 10 === 0;

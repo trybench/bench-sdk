@@ -77,31 +77,153 @@ Send one real request after setup and confirm the system appears under
 AI Systems with its agents, models and tools. Metadata-only capture is enough
 for discovery; do not enable content capture for it.
 
-## Register the prompts you can see
+## Register the model calls you can see
 
-Traces never carry the editable prompt template, so a runtime system has no
-prompt components until they are registered. You are inside the repository:
-find every prompt the system sends (system prompts, instructions, templates in
-code, YAML, Markdown or JSON, prompts assembled across files) and register them
-on the system with the `register_prompts` operation
-(`POST /api/ai-systems/{id}/prompts`, MCP tool `bench_register_prompts`), using
-the same key as the SDK:
+Traces never carry the editable prompt, so a runtime system has no prompt
+components until you register them. You are inside the repository. Register
+**calls, not prompts**: one entry per request the code sends to a model. A call's
+system prompt, user template, few-shot turns and injected context belong in the
+same entry, because Bench evaluates the call as the code sends it. Use the
+`register_calls` operation (`POST /api/ai-systems/{id}/calls`, MCP tool
+`bench_register_calls`). `register_prompts` is deprecated: it stores each prompt as
+its own unit, so a call whose system prompt and user message are registered
+separately is evaluated as two partial calls.
+
+### 1. Find the calls
+
+Find every place the code sends a request to a model (`.create(`, `generateText`,
+`client.chat`, an agent `.run`, a framework's model call). Skip offline scripts
+unless they matter in production: mark those `scope: "offline_script"`. If one
+function builds the prompt for several calls, or one call takes several prompts as
+an argument, that is one call with conditions (below), not several calls.
+
+### 2. Give each call a code-derived key
+
+`key` is `<repo-relative file>::<qualified function>#<ordinal of the model call in
+that function>`, for example `src/services/recipe.py::extract_recipe#0`. Derive it
+from the code, never from a name you chose, a line number, or a prompt title: Bench
+uses it to recognize the same call after edits. Also send `shape`: a short
+fingerprint of the call expression (its keyword argument names, model expression,
+and the enclosing function's parameters) so Bench can follow a call that was
+renamed or moved. If you can parse the code (Python `ast`, TypeScript compiler API),
+use `key_source: "ast"`; if you derived the key by hand use `"agent"`.
+
+### 3. Describe the request as fragments
+
+A call is a list of `fragments`, in the order the code sends them. Each has a
+`role`, a `kind` and an `id`:
+
+- `kind: "text"`: prompt text. `text` is the string the model receives with every
+  variable written as `{name}`.
+- `kind: "runtime_value"`: a message with no source text that the test case supplies
+  (the user's turn is usually this). Send no `text`.
+- `kind: "constant"`: text that only feeds a variable of another fragment (a shared
+  few-shot block). Bind it with `variables[].bound_to_fragment`; it is never sent
+  on its own.
+
+**Register the resolved string, not the code that builds it.** Source such as
+`parts = [f"Case: {x.category}", ...]` is not a prompt. Run or evaluate the code
+that builds the prompt with small sample inputs and register what it produces, with
+the variable parts replaced by `{name}`. Set `text_provenance: "resolved_string"`
+when you obtained the text by running or evaluating code, `"source_text"` when you
+only read it from the source. Never paraphrase.
+
+- Python: import the builder and call it with simple stand-ins; no network or
+  model call is needed. Keepr-style apps can be captured by running the call with a
+  fake client that records `messages`.
+- TypeScript or JavaScript: extract the string expression (template literal,
+  concatenation, builder function) into a scratch file and run it with `tsx` or
+  `node`. Run it as TypeScript when the snippet has type syntax (`as string`).
+- Go and Rust: print the builder's output from a scratch test or example.
+- If a prompt is fetched from a remote service, or the framework wraps your text in
+  its own template (supervisor agents add guidelines and a memory block), say so in
+  `notes`; the text in the repository is not what the model receives.
+- If you cannot resolve a piece, register what you can and set
+  `verification.level` to `evidence_lacking`. Do not guess.
+
+For each variable give `name`, `expr` (the expression exactly as written, e.g.
+`row[0]` or `item.name`) and, when you ran the code, `format_hint` and
+`source`: `literal`, `code`, `command_output` (a value from running a command) or
+`runtime_input`.
+
+### 4. Conditions
+
+When the code decides which pieces to send (`if "slot" in present_types:`, a
+language switch, optional rule blocks), do not register one call per combination and
+do not merge every piece in. Register the pieces as fragments with a `when`
+expression over named `conditions`:
+
+```json
+"conditions": [{"id": "slot", "description": "the batch has a slot cluster",
+                "code_ref": "\"slot\" in present_types"}],
+"fragments": [{"id": "rule_slot", "role": "system", "kind": "text", "group": "rules",
+               "when": "slot", "text": "- For a slot cluster ..."}]
+```
+
+`when` uses condition ids with `and`, `or`, `not` and parentheses only. Use
+`groups` for text the code emits around a run of fragments (a header before the
+first included fragment, a separator between them). Use `message_group` when
+several fragments form one message that is not the system message. Add
+`constraints` (`exactly_one`, `not_both`, `implies`, each with a `source`) when the
+code makes combinations impossible. A condition that changes which model, tools or
+place in the code is used is a different call, not a condition.
+
+### 5. Configuration, slots, tools
+
+`configurations` lists the model setups. Exactly one has `source: "code"`: what the
+code does today (provider, model, fallback, tools, `tool_choice`, and `settings`
+with `declared` values and `effective` values: wrappers often drop or inject
+options such as `temperature` or `reasoning_effort`, so check what the provider call
+really receives). Do not add `suggested` configurations yourself. Use `slots` for
+conversation history and injected context (a second system message with user facts)
+that the code adds around the fragments.
+
+### 6. Verify before you claim it
+
+For every call, compare what you registered with what the code produces. Render
+the fragments yourself for at least the all-conditions-off state, one state with
+each condition on, and (for a few conditions) every state, and check each equals the
+real builder's output. Then set `verification`:
+
+- `agent_verified`: you ran the builder and **every** checked state matched. Send
+  `evidence` with `method`, `states_checked` and `states_matched` (equal).
+- `declared_only`: read from code, not run.
+- `evidence_lacking`: part of the text could not be resolved.
+
+Bench refuses `agent_verified` without matching evidence. Fix a mismatch (a missed
+inline rule string is the usual cause) before you register.
+
+### 7. Register and use the result
 
 ```json
 {"repo_full_name": "owner/repo", "branch": "main",
- "prompts": [{"path": "src/agents/prompts/analyzer.yaml", "line": 3, "end_line": 40,
-              "name": "analyzer system prompt", "role": "system",
-              "content": "<exact template text, variables unfilled>",
-              "agent": "Analyzer agent"}]}
+ "calls": [{"key": "src/services/recipe.py::extract_recipe#0",
+            "key_source": "ast", "shape": "a1b2c3d4e5", "name": "recipe extraction",
+            "scope": "production",
+            "configurations": [{"source": "code", "provider": "openai", "model": "gpt-5.4-nano",
+                                "settings": {"declared": {}, "effective": {"reasoning_effort": "low"},
+                                             "effective_provenance": "observed"}}],
+            "fragments": [
+              {"id": "system", "role": "system", "kind": "text", "text_provenance": "resolved_string",
+               "text": "You are a recipe parser. Return ONLY valid JSON."},
+              {"id": "user", "role": "user", "kind": "text", "text_provenance": "resolved_string",
+               "text": "Extract the recipe from this text:\n\n{content}",
+               "variables": [{"name": "content", "expr": "content", "source": "runtime_input"}]}],
+            "verification": {"level": "agent_verified",
+                             "evidence": {"method": "ran the call with a fake client and compared messages",
+                                          "states_checked": 1, "states_matched": 1}}}]}
 ```
 
-Rules: cite the real file and line; copy the text exactly, never paraphrase or
-invent; set `agent` to the agent's runtime span name so the prompt lands inside
-that agent's node; include `model` only when the account has model selection.
-The response returns component ids: put each on the spans of the model call
-that sends that prompt (`bench.component_id` / `componentId`) so runtime
-evidence links to it. Registration is idempotent per path and line, edits no
-source, starts no evaluation, and does not need a GitHub connection.
+The response returns one component id per call (shown in Bench as `Call #<id>`).
+Put it on the spans of that call (`bench.component_id` / `componentId`) so runtime
+evidence links to it. Read the `status` and `warnings` of each call: Bench cleans
+placeholder syntax such as `{row[0]}` itself and tells you what it changed; a call
+that "looks like Call #N" was registered as new because the match was doubtful; a
+call missing from a later registration is kept and labelled not seen. If Bench
+could not reach its checker, calls are stored as not checked and are not evaluated
+until you register again. Registration is repeatable, edits no source, starts no
+evaluation, and does not need a GitHub connection. Cite real files and lines, and
+do not invent text, models, tools or settings.
 
 ## Write down what the system is for
 
