@@ -40,6 +40,16 @@ REQUEST_METHODS = {
     "predict", "apredict", "parse", "stream",
 }
 PROMPT_ARGUMENTS = {"messages", "contents", "prompt", "input", "system", "system_instruction", "instructions"}
+# Calls that build or run a prompt through a framework instead of passing explicit prompt arguments
+# to a client method. The finder does not analyse these; it lists them so a reader knows where to look.
+FRAMEWORK_CALLS = {
+    "create_agent", "create_react_agent", "create_supervisor", "create_swarm", "create_tool_calling_agent",
+    "with_structured_output", "bind_tools", "from_messages", "from_template", "ChatPromptTemplate",
+    "PromptTemplate", "SystemMessage", "HumanMessage", "SystemMessagePromptTemplate", "HumanMessagePromptTemplate",
+    "invoke", "ainvoke", "astream", "astream_events",
+}
+# Request methods under these attribute names send no text prompt (speech, embeddings, images, moderation).
+NON_PROMPT_RECEIVERS = {"speech", "audio", "embeddings", "images", "moderations", "transcriptions", "translations"}
 SKIP_DIRS = {".git", "node_modules", "venv", ".venv", "env", "__pycache__", "site-packages", "build", "dist", ".tox"}
 OFFLINE_HINTS = ("test", "scripts", "script", "examples", "example", "benchmark", "notebook", "eval", "tools")
 OWN_TEXT_MIN = 40  # characters of literal text that make a request site "direct"
@@ -80,6 +90,8 @@ class Module(ast.NodeVisitor):
         self.functions: dict[str, ast.AST] = {}
         self.sites: list[dict] = []
         self.calls: list[dict] = []
+        self.hints: list[dict] = []
+        self.skipped: list[dict] = []
         self.constants = {
             t.id for n in getattr(tree, "body", []) if isinstance(n, ast.Assign)
             and ((isinstance(n.value, ast.Constant) and isinstance(n.value.value, str)) or isinstance(n.value, ast.JoinedStr))
@@ -88,7 +100,18 @@ class Module(ast.NodeVisitor):
         self.visit(tree)
 
     def qualified(self) -> str:
-        return ".".join(n.name for n in self.stack) or "<module>"
+        return ".".join(n.name for n in self.stack) or self.assigned or "<module>"
+
+    assigned = None
+
+    def visit_Assign(self, node):
+        """Module-level `name = something(...)`: calls inside belong to `name` (a framework object assigned once)."""
+        if not self.stack and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+            self.assigned = node.targets[0].id
+            self.generic_visit(node)
+            self.assigned = None
+        else:
+            self.generic_visit(node)
 
     def _scope(self, node):
         self.stack.append(node)
@@ -104,10 +127,29 @@ class Module(ast.NodeVisitor):
         fn = next((s for s in reversed(self.stack) if isinstance(s, (ast.FunctionDef, ast.AsyncFunctionDef))), None)
         entry = {"rel": self.rel, "qual": self.qualified(), "node": node, "fn": fn, "name": name}
         if name in self.methods and any(k.arg in PROMPT_ARGUMENTS for k in node.keywords):
-            self.sites.append(entry)
+            if attribute_names(node.func) & NON_PROMPT_RECEIVERS:
+                self.skipped.append({"file": self.rel, "function": self.qualified(), "line": node.lineno})
+            else:
+                self.sites.append(entry)
         elif name:
             self.calls.append(entry)
+            if name in FRAMEWORK_CALLS:
+                self.hints.append({"file": self.rel, "function": self.qualified(), "line": node.lineno, "construct": name})
         self.generic_visit(node)
+
+
+def attribute_names(func) -> set[str]:
+    """Attribute names along a call's receiver chain: `client.audio.speech.create` -> {audio, speech, create, client}"""
+    found = set()
+    while isinstance(func, (ast.Attribute, ast.Call)):
+        if isinstance(func, ast.Attribute):
+            found.add(func.attr)
+            func = func.value
+        else:
+            func = func.func
+    if isinstance(func, ast.Name):
+        found.add(func.id)
+    return found
 
 
 def names_in(expr) -> set[str]:
@@ -355,11 +397,33 @@ def analyze(root: str, methods: set[str], exclude: set[str]) -> dict:
         )
     for s in all_sites:
         records.append(s["record"])
-    return {"root": os.path.abspath(root), "sites": sorted(records, key=lambda r: (r["file"], r["line"]))}
+    hints = collections.defaultdict(lambda: {"count": 0, "constructs": collections.Counter(), "functions": set()})
+    for m in modules.values():
+        for h in m.hints:
+            e = hints[h["file"]]
+            e["count"] += 1
+            e["constructs"][h["construct"]] += 1
+            e["functions"].add(h["function"])
+    unanalysed = [
+        {"file": f, "count": e["count"], "constructs": dict(e["constructs"]), "functions": sorted(e["functions"])}
+        for f, e in sorted(hints.items()) if not likely_offline(f)
+    ]
+    skipped = [x for m in modules.values() for x in m.skipped]
+    return {"root": os.path.abspath(root), "sites": sorted(records, key=lambda r: (r["file"], r["line"])),
+            "unanalysed_framework_calls": unanalysed, "skipped_non_prompt_calls": skipped}
+
+
+COVERAGE = (
+    "COVERAGE: this list is NOT complete. The finder only sees calls to common client methods with an explicit prompt\n"
+    "argument (messages=, contents=, prompt=, ...). Requests made through a framework (agent factories, runnables,\n"
+    "prompt templates, graph nodes, injected callbacks, dynamic dispatch) are not analysed: read the files listed under\n"
+    "'not analysed' below and find those calls by reading."
+)
 
 
 def print_text(result: dict) -> None:
-    print(f"Request sites found under {result['root']}: {len(result['sites'])}")
+    print(COVERAGE)
+    print(f"\nRequest sites found under {result['root']}: {len(result['sites'])}")
     for r in result["sites"]:
         print(f"\n{r['key']}  [{r['kind']}]  shape={r['shape']}  line {r['line']}")
         if r["kind"] == "direct":
@@ -383,6 +447,13 @@ def print_text(result: dict) -> None:
             print("   proposed calls:", ", ".join(r["proposed_calls"]))
         if r["offline_calls"]:
             print("   likely offline (scope offline_script):", ", ".join(r["offline_calls"]))
+    if result["skipped_non_prompt_calls"]:
+        print(f"\nSkipped as non-prompt calls (speech, embeddings, images, moderation): {len(result['skipped_non_prompt_calls'])}")
+    if result["unanalysed_framework_calls"]:
+        print("\nNot analysed: files that use framework constructs which may send model requests (read these):")
+        for u in result["unanalysed_framework_calls"]:
+            kinds = ", ".join(f"{k} x{v}" for k, v in sorted(u["constructs"].items()))
+            print(f"   {u['file']}: {kinds}  (in {', '.join(u['functions'][:4])}{', ...' if len(u['functions']) > 4 else ''})")
 
 
 def main() -> int:

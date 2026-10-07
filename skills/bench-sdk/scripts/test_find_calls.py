@@ -268,5 +268,46 @@ class CommandLine(unittest.TestCase):
         self.assertIn("a.py::f#0", text)
 
 
+
+class CoverageHonesty(unittest.TestCase):
+    def test_framework_constructs_are_listed_as_not_analysed(self):
+        r = run({"agents/a.py": '''
+            from fw import create_agent, ChatPromptTemplate
+            def build(llm):
+                prompt = ChatPromptTemplate.from_messages([("system", "You are a careful assistant."), ("human", "{q}")])
+                return create_agent(llm, prompt=prompt)
+            async def go(agent, q):
+                return await agent.ainvoke({"q": q})
+        '''})
+        self.assertEqual(r["sites"], [])
+        files = {u["file"]: u for u in r["unanalysed_framework_calls"]}
+        self.assertIn("agents/a.py", files)
+        self.assertIn("create_agent", files["agents/a.py"]["constructs"])
+        self.assertIn("ainvoke", files["agents/a.py"]["constructs"])
+
+    def test_text_output_always_states_that_coverage_is_partial(self):
+        root = repo({"x.py": "def f():\n    return 1\n"})
+        out = subprocess.run([sys.executable, os.path.join(HERE, "find_calls.py"), root], capture_output=True, text=True).stdout
+        self.assertIn("NOT complete", out)
+
+    def test_module_level_requests_are_keyed_by_the_assigned_name(self):
+        r = run({"m.py": '''
+            first = client.chat.create(model="m", messages=[{"role": "user", "content": "Classify the text carefully and briefly please."}])
+            second = client.chat.create(model="m", messages=[{"role": "user", "content": "Now summarize the text for me in one line."}])
+            client.chat.create(model="m", messages=[{"role": "user", "content": "Unassigned module level request, long enough text."}])
+        '''})
+        self.assertEqual(sorted(by_key(r)), ["m.py::<module>#0", "m.py::first#0", "m.py::second#0"])
+
+    def test_requests_without_a_text_prompt_are_skipped(self):
+        r = run({"v.py": '''
+            def say(client, text):
+                return client.audio.speech.create(model="tts", voice="v", input=text)
+            def embed(client, text):
+                return client.embeddings.create(model="e", input=text)
+        '''})
+        self.assertEqual(r["sites"], [])
+        self.assertEqual(len(r["skipped_non_prompt_calls"]), 2)
+
+
 if __name__ == "__main__":
     unittest.main()

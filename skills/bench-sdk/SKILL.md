@@ -104,6 +104,32 @@ two callers do different jobs, and it only knows common client method names (pas
 `--methods name1,name2` for others). In other languages, find the sites by reading
 and derive the key and shape by hand as described in section 2.
 
+**The finder's list is never the whole answer.** It only sees calls to common client
+methods with an explicit prompt argument. Its output ends with a "not analysed" list of
+files that use framework constructs (agent factories, runnables, prompt templates);
+treat an empty or short site list as "the finder could not see the requests", not as "there
+are few calls". Read every listed file, and any file that builds a prompt, and register what
+you find there too (keys by hand, `key_source: "agent"`).
+
+**Frameworks that hide the request.** Many frameworks send the request for you: an
+agent or supervisor factory (`create_agent(model, prompt=...)`), a prompt template piped
+into a model (`prompt | model`), a runnable or graph node (`model.invoke(...)`,
+`await model.ainvoke(...)`, `with_structured_output(...)`, `bind_tools(...)`), or an
+agent object created once at module level. The call is the place that owns the prompt
+and the model, even if the framework makes the final request. Rules:
+- Roles in framework prompts map to the request roles: `human` is `user`, `ai` is
+  `assistant`, `system` stays `system`. A message that is only a runtime value (for
+  example the running chat history, or the user's question) is a `runtime_value`
+  fragment or a `history` slot, not text.
+- A factory or helper used by several apps for different jobs follows the shared-helper
+  rule above: one call per producing caller.
+- A framework may add text you cannot see in the repository (a supervisor's built-in
+  guidelines, middleware, tool descriptions): say so in `notes` and do not claim
+  `agent_verified` for text you did not see.
+- A call with no prompt text of its own (the framework supplies it, or only history is
+  sent) is registered with `verification.level` `evidence_lacking` and a note, not
+  skipped silently.
+
 Find every place the code sends a request to a model (`.create(`, `generateText`,
 `client.chat`, an agent `.run`, a framework's model call). Skip offline scripts
 unless they matter in production: mark those `scope: "offline_script"`.
@@ -153,7 +179,10 @@ use `"agent"`.
 - **Function part:** the enclosing named function with its classes (`Service.run`).
   For code inside a callback or lambda, use the nearest enclosing named construct
   and, where a framework object is assigned to a name, that name
-  (`planActivities.execute`); for module-level code use `<module>`.
+  (`planActivities.execute`). For module-level code use the name the result is assigned
+  to when there is one (`math_agent = create_agent(...)` gives `<file>::math_agent#0`),
+  and `<module>#n` only when nothing is assigned. Use the same rule every time so two
+  runs give the same key; the ordinal then counts only requests under that name.
 - **Chained helpers:** when a helper forwards to another helper, the producing caller
   is the first function up the chain that supplies the prompt text.
 - **`shape` is required** whenever you send a key, and it must be computed, never
@@ -162,6 +191,10 @@ use `"agent"`.
   the model argument, or of the receiver if there is none>|params:<parameter names of
   the enclosing function except self/cls, comma-joined>`. The finder prints it; in
   other languages compute the same string and hash it (`printf '%s' "$s" | shasum | cut -c1-10`).
+  When the request is made by a helper that takes an options object, the argument names
+  are the object's keys. Calls of one helper in one file often share a shape; that is
+  fine: the key (with its ordinal) identifies them, and Bench uses the shape only to follow
+  a call whose key changed.
 
 ### 3. Describe the request as fragments
 
@@ -241,12 +274,17 @@ expression over named `conditions`:
 first included fragment, a separator between them). Use `message_group` when
 several fragments form one message that is not the system message. Add
 `constraints` (`exactly_one`, `not_both`, `implies`, each with a `source`) when the
-code makes combinations impossible. A condition that changes which model, tools or
+code makes combinations impossible; each constraint names at least two conditions (a
+single condition needs none). `output_format` belongs to the call, next to
+`configurations`, not inside a configuration. A condition that changes which model, tools or
 place in the code is used is a different call, not a condition.
 
 ### 5. Configuration, slots, tools
 
-`configurations` lists the model setups. Exactly one has `source: "code"`: what the
+`configurations` lists the model setups. `model` is required: when the model is
+chosen at runtime (a setting, a per-request choice), put the expression as written in
+the code (`settings.DEFAULT_MODEL`) and explain in `notes`; set `provider` only when
+you know it. Exactly one has `source: "code"`: what the
 code does today (provider, model, fallback, tools, `tool_choice`, and `settings`
 with `declared` values and `effective` values: wrappers often drop or inject
 options such as `temperature` or `reasoning_effort`, so check what the provider call
@@ -257,6 +295,11 @@ describes the output contract the code asks for (for example a JSON schema or a
 response-format object). A call is `production` when it runs in the live application
 and `offline_script` when only scripts, tests or evaluation code run it (a judge in
 an evaluation scorer is offline unless the same code runs it for live traffic).
+A configuration's `provenance` says whether the model and tools were `declared`
+(read from code) or `observed` (seen in a real request); `settings.effective_provenance`
+says the same for the effective settings. A sync and an async method that do the same
+job (`invoke` and `ainvoke` of one class) are one call; register the one the application
+uses and mention the other in `notes`.
 Do not add `suggested` configurations yourself. Use `effective_provenance`
 `observed` only if you saw the values in a real request; `declared` when you read
 them from code; `unknown` when you could not tell. Use `slots` for
@@ -275,7 +318,10 @@ real builder's output. Then set `verification`:
 - `declared_only`: read from code, not run.
 - `evidence_lacking`: part of the text could not be resolved.
 
-`agent_verified` certifies the prompt text only, not that the call works: if you
+`agent_verified` means you obtained the prompt text by running or evaluating the
+code that builds it and compared the result. If you only extracted string literals and
+checked them against themselves, or retyped text instead of extracting it, use
+`declared_only`. It certifies the prompt text only, not that the call works: if you
 see wiring that would fail (a missing required argument, a key that does not exist)
 or a hard-coded secret, say so in `notes`, and never copy a secret into the payload.
 Bench refuses `agent_verified` without matching evidence. Fix a mismatch (a missed
