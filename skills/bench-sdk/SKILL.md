@@ -91,6 +91,17 @@ separately is evaluated as two partial calls.
 
 ### 1. Find the calls
 
+In a Python repository, start with the bundled finder (standard library only; it
+never runs the repository): `python3 <this skill's folder>/scripts/find_calls.py
+<repo root>` (add `--json` for machine output). It lists every request site with its
+key and `shape`, says whether the site is direct or a shared helper, and for a
+helper lists its callers, what each passes, and the key and shape of each producing
+caller. It proposes; you confirm by reading the code. It cannot see dynamic dispatch
+(prompt dictionaries, callbacks, decorators, registries), other languages, or whether
+two callers do different jobs, and it only knows common client method names (pass
+`--methods name1,name2` for others). In other languages, find the sites by reading
+and derive the key and shape by hand as described in section 2.
+
 Find every place the code sends a request to a model (`.create(`, `generateText`,
 `client.chat`, an agent `.run`, a framework's model call). Skip offline scripts
 unless they matter in production: mark those `scope: "offline_script"`.
@@ -103,7 +114,7 @@ A call is one **job**, not one line of code. Decide as follows:
   e.g. `ask(system_prompt, user_text)`): list every function that calls it and what
   each passes. Callers that do different jobs are **separate calls, one per
   producing caller function**, each with its own key built from the caller (for
-  example `app.py::summarize#0`, `app.py::translate#0`) and a `notes` entry that
+  example `app.py::summarize#0`, `app.py::translate#0`) and a `notes` entry (a list of strings) that
   they share a request site. A caller that only forwards its own parameter on is
   not a call: follow the chain to its callers.
 - **Optional pieces inside one caller** (an `if` that adds a rule block, a language
@@ -126,7 +137,24 @@ uses it to recognize the same call after edits. Also send `shape`: a short
 fingerprint of the call expression (its keyword argument names, model expression,
 and the enclosing function's parameters) so Bench can follow a call that was
 renamed or moved. If you can parse the code (Python `ast`, TypeScript compiler API),
-use `key_source: "ast"`; if you derived the key by hand use `"agent"`.
+use `key_source: "ast"` (the finder's output counts); if you derived the key by hand
+use `"agent"`.
+
+- **Ordinal:** the position of the model request among the request sites and
+  helper calls in that function, counted in source order, starting at 0. A function
+  with one request is `#0`.
+- **Function part:** the enclosing named function with its classes (`Service.run`).
+  For code inside a callback or lambda, use the nearest enclosing named construct
+  and, where a framework object is assigned to a name, that name
+  (`planActivities.execute`); for module-level code use `<module>`.
+- **Chained helpers:** when a helper forwards to another helper, the producing caller
+  is the first function up the chain that supplies the prompt text.
+- **`shape` is required** whenever you send a key, and it must be computed, never
+  invented: the first 10 hex characters of the SHA-1 of the string
+  `kw:<sorted argument names of the request call, comma-joined>|model:<source text of
+  the model argument, or of the receiver if there is none>|params:<parameter names of
+  the enclosing function except self/cls, comma-joined>`. The finder prints it; in
+  other languages compute the same string and hash it (`printf '%s' "$s" | shasum | cut -c1-10`).
 
 ### 3. Describe the request as fragments
 
@@ -161,6 +189,27 @@ only read it from the source. Never paraphrase.
 - If you cannot resolve a piece, register what you can and set
   `verification.level` to `evidence_lacking`. Do not guess.
 
+**How fragments are joined.** The text of all included `system` fragments is
+concatenated in order, with nothing between them, into one system message; a group
+adds its `header` before its first included fragment and its `separator` between
+included fragments. Fragments sharing a `message_group` are concatenated the same way
+into one message. Fragments of other roles, without a `message_group`, are separate
+messages. So put every newline the code emits into the text, the header or the
+separator. History and injected context go in `slots`, not in fragments.
+
+**Braces.** Only `{identifier}` is a placeholder. JSON examples and other braces in
+the resolved text stay as they are (`{"a": 1}` is fine). Text that must contain a
+literal `{word}` cannot be expressed: say so in `notes` and set
+`verification.level` to `evidence_lacking`.
+
+**Loops.** A block the code builds in a loop (one line per item) is one variable
+whose `kind` is `expression`, with a `format_hint` that shows one item and says how
+items are joined. Do not expand the loop and do not add a condition per item.
+
+**Not a prompt call.** Requests with no text prompt (speech to text, embeddings,
+image generation, moderation) are not registered. A tool loop (the same call repeated
+with a growing message list) is one call: register the first request.
+
 For each variable give `name`, `expr` (the expression exactly as written, e.g.
 `row[0]` or `item.name`) and, when you ran the code, `format_hint` and
 `source`: `literal`, `code`, `command_output` (a value from running a command) or
@@ -194,7 +243,16 @@ place in the code is used is a different call, not a condition.
 code does today (provider, model, fallback, tools, `tool_choice`, and `settings`
 with `declared` values and `effective` values: wrappers often drop or inject
 options such as `temperature` or `reasoning_effort`, so check what the provider call
-really receives). Do not add `suggested` configurations yourself. Use `slots` for
+really receives). `declared` and `effective` are plain objects of option name to JSON value
+(`{"temperature": 0, "reasoning_effort": "low"}`); `tool_choice` is a string
+(`"auto"`, `"required"` or a tool name); `output_format` is a free object that
+describes the output contract the code asks for (for example a JSON schema or a
+response-format object). A call is `production` when it runs in the live application
+and `offline_script` when only scripts, tests or evaluation code run it (a judge in
+an evaluation scorer is offline unless the same code runs it for live traffic).
+Do not add `suggested` configurations yourself. Use `effective_provenance`
+`observed` only if you saw the values in a real request; `declared` when you read
+them from code; `unknown` when you could not tell. Use `slots` for
 conversation history and injected context (a second system message with user facts)
 that the code adds around the fragments.
 
@@ -222,7 +280,7 @@ inline rule string is the usual cause) before you register.
             "scope": "production",
             "configurations": [{"source": "code", "provider": "openai", "model": "gpt-5.4-nano",
                                 "settings": {"declared": {}, "effective": {"reasoning_effort": "low"},
-                                             "effective_provenance": "observed"}}],
+                                             "effective_provenance": "declared"}}],
             "fragments": [
               {"id": "system", "role": "system", "kind": "text", "text_provenance": "resolved_string",
                "text": "You are a recipe parser. Return ONLY valid JSON."},
