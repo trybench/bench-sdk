@@ -309,5 +309,19 @@ class CoverageHonesty(unittest.TestCase):
         self.assertEqual(len(r["skipped_non_prompt_calls"]), 2)
 
 
+
+class SkillLayout(unittest.TestCase):
+    def test_every_reference_file_named_in_the_skill_exists_and_is_used(self):
+        import re
+        skill_dir = os.path.dirname(HERE)
+        text = open(os.path.join(skill_dir, "SKILL.md")).read()
+        named = set(re.findall(r"references/([a-z0-9-]+\.md)", text))
+        self.assertTrue(named)
+        for name in named:
+            self.assertTrue(os.path.exists(os.path.join(skill_dir, "references", name)), name)
+        for name in os.listdir(os.path.join(skill_dir, "references")):
+            self.assertIn(name, named, f"{name} is not linked from SKILL.md")
+
+
 if __name__ == "__main__":
     unittest.main()
