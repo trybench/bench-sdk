@@ -29,6 +29,12 @@ service, register the fragments you can see (at least the user turn as a
 `runtime_value`), set `verification.level` to `evidence_lacking`, and say where the
 text comes from in `notes`. `evidence` is optional for that level; `agent_verified`
 needs at least one checked state, so it is never used with zero.
+Before you give up on remote or stored text (a database row, a prompt service, a
+setting), look in the repository for where it starts: a migration or seed, a fixture, a
+JSON or YAML file, an admin or sync script, a default value in code. If you find a
+starting text, register it as a `text` fragment with `text_provenance: "source_text"`,
+verification `declared_only`, and say in `notes` that it is the seed and may differ from
+the live prompt. If you find none, keep `evidence_lacking`.
 
 **Register the resolved string, not the code that builds it.** Source such as
 `parts = [f"Case: {x.category}", ...]` is not a prompt. Run or evaluate the code
