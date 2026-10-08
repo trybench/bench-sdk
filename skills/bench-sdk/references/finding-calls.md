@@ -48,13 +48,19 @@ repository or installed, read it and register the call. If you cannot read it, n
 the library in `notes` so the gap is visible.
 
 Find every place the code sends a request to a model (`.create(`, `generateText`,
-`client.chat`, an agent `.run`, a framework's model call). Skip offline scripts
-unless they matter in production: mark those `scope: "offline_script"`.
+`client.chat`, an agent `.run`, a framework's model call). Register scripts and
+evaluation judges that send a real prompt of the application's own as
+`scope: "offline_script"`. Skip requests that carry no prompt of the application's
+own: credential checks, health checks, model-list probes, and tests that only mock
+the model.
 
 A call is one **job**, not one line of code. Decide as follows:
 
-- The request site builds its messages from its own literal text, with parameters
-  only as data: one call.
+- The request site builds its messages from its own text, with parameters only as
+  data: one call. Its own text is a literal in the function, a string constant
+  (module-level or a class attribute), or the result of a prompt-builder function
+  that the function calls with its parameters as data. The function that owns the
+  text is the call, even when it passes the request on to a client wrapper.
 - The request site is a **shared helper** (its messages come from its parameters,
   e.g. `ask(system_prompt, user_text)`): list every function that calls it and what
   each passes. Callers that do different jobs are **separate calls, one per

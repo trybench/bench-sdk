@@ -15,7 +15,10 @@ use `"agent"`.
 
 - **Ordinal:** the position of the model request among the request sites and
   helper calls in that function, counted in source order, starting at 0. A function
-  with one request is `#0`.
+  with one request is `#0`. A helper that has its own prompt text is its own call with
+  its own key; it does not count in the ordinal of the function that calls it. Only
+  requests made in the function itself, and calls to a shared helper whose prompt this
+  function supplies, count.
 - **Function part:** the full chain of enclosing named classes and functions, outermost
   first, joined with dots (`Service.run`; a call inside a function `inner` defined
   inside `build` is `build.inner`, never just `inner` or `build`). Do not skip a level
@@ -37,19 +40,25 @@ use `"agent"`.
   or `.stream` runs the whole chain. Their shapes may be equal; the key tells them apart.
 - **Chained helpers:** when a helper forwards to another helper, the producing caller
   is the first function up the chain that supplies the prompt text.
-- **`shape` is required on every call** (no call is sent without one; check each call
-  in the payload before you register), and it must be computed, never invented: the first 10 hex characters of the SHA-1 of the string
+- **Send `shape` on every call.** The API accepts a call without one unless
+  `key_source` is `ast`, but then Bench cannot follow a renamed or moved call: it
+  becomes a new unit and the old one turns "not seen". It must be computed, never invented: the first 10 hex characters of the SHA-1 of the string
   `kw:<sorted argument names of the request call, comma-joined>|model:<source text of
   the model argument, or of the receiver if there is none>|params:<parameter names of
   the enclosing function except self/cls, comma-joined>`. The finder prints it; in
   other languages compute the same string and hash it (`printf '%s' "$s" | shasum | cut -c1-10`).
   When the request is made by a helper that takes an options object, the argument names
   are the object's keys. In languages with positional arguments, the names are the keys
-  of every object-literal argument (merged, sorted); positional values add nothing.
+  of every object-literal argument at its top level (merged, de-duplicated, sorted);
+  array literals, tuples and other positional values add nothing.
   The request call is the method that actually triggers the request on the model, chain
   or agent object (`invoke`, `stream`, `streamEvents`, `generate`, `run`, `create`); for
-  a composed chain it is the call that runs the chain. The model part is the model
-  expression; when the request is made on a chain or agent object and no model
-  expression is in scope, use the variable name of that object. Calls of one helper in one file often share a shape; that is
+  a composed chain it is the call that runs the chain. The model part is the source text of
+  the receiver the request is made on, up to the request method, with whitespace
+  removed and every argument list replaced by `(...)` (`this.model`,
+  `llm.withConfig(...)`); for a helper called with no receiver it is the helper's name.
+  The parameter part lists the enclosing function's parameter names in source order;
+  a destructured parameter contributes its property names in source order. This rule
+  is untested across agents: if two runs disagree on shapes, the key still identifies the call. Calls of one helper in one file often share a shape; that is
   fine: the key (with its ordinal) identifies them, and Bench uses the shape only to follow
   a call whose key changed.

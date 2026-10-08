@@ -102,8 +102,8 @@ this file) to open **before** you do it; do not work from memory of the rules.
    one caller are conditions. Skip speech, embeddings, images and moderation.
    Open `references/finding-calls.md`.
 2. **Give each call a key and a shape.** `key` = `<file>::<qualified function>#<ordinal>`,
-   derived from the code, never a name you chose or a line number; `shape` is required on
-   every call and computed (the finder prints it), never invented. Open `references/keys-and-shapes.md`.
+   derived from the code, never a name you chose or a line number; send `shape` on every call,
+   computed (the finder prints it), never invented. Open `references/keys-and-shapes.md`.
 3. **Write the request as fragments.** Register the resolved string (run or evaluate the
    builder), variables as `{name}`, the user turn as a `runtime_value` fragment when it
    has no text of its own. Open `references/fragments-and-conditions.md`.

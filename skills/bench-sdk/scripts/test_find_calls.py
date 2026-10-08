@@ -42,6 +42,29 @@ class DirectCalls(unittest.TestCase):
         self.assertEqual(site["kind"], "direct")
         self.assertEqual(len(site["shape"]), 10)
 
+    def test_a_prompt_kept_in_a_class_or_module_constant_is_the_functions_own_text(self):
+        r = run({"app/ext.py": '''
+            HEADER = "You rewrite search queries for a document library. Keep every keyword."
+            class Extractor:
+                PROMPT = "Extract the filters from this query as JSON, using only the fields listed: {query}"
+                def extract(self, manager, query):
+                    prompt = self.PROMPT.format(query=query)
+                    return manager.chat.completions.create(model="m", messages=[{"role": "user", "content": prompt}])
+                def rewrite(self, manager, query):
+                    return manager.chat.completions.create(model="m", messages=[{"role": "user", "content": HEADER + query}])
+        '''})
+        sites = by_key(r)
+        self.assertEqual(sites["app/ext.py::Extractor.extract#0"]["kind"], "direct")
+        self.assertEqual(sites["app/ext.py::Extractor.rewrite#0"]["kind"], "direct")
+
+    def test_a_constant_that_is_short_does_not_make_a_pass_through_helper_direct(self):
+        r = run({"app/h.py": '''
+            SEP = "---"
+            def ask(client, prompt):
+                return client.chat.completions.create(model="m", messages=[{"role": "user", "content": prompt + SEP}])
+        '''})
+        self.assertEqual(by_key(r)["app/h.py::ask#0"]["kind"], "wrapper")
+
     def test_keys_use_qualified_names_and_source_order_ordinals(self):
         r = run({"a.py": '''
             class Service:

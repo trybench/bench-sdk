@@ -50,6 +50,13 @@ only read it from the source. Never paraphrase.
 - If you cannot resolve a piece, register what you can and set
   `verification.level` to `evidence_lacking`. Do not guess.
 
+A fragment's text cannot be only whitespace. A separator the code emits between
+fragments goes into the group's `separator` (or `header`); between two fixed fragments,
+add it to the end of the earlier fragment's text or the start of the later one.
+
+**Tip:** when you run a builder, pass `{name}` strings as its inputs; the output then
+already contains the placeholders, and a mismatch with your fragments shows up at once.
+
 **How fragments are joined.** The text of all included `system` fragments is
 concatenated in order, with nothing between them, into one system message; a group
 adds its `header` before its first included fragment and its `separator` between
@@ -61,11 +68,22 @@ separator. History and injected context go in `slots`, not in fragments.
 **Braces.** Only `{identifier}` is a placeholder. JSON examples and other braces in
 the resolved text stay as they are (`{"a": 1}` is fine). Text that must contain a
 literal `{word}` cannot be expressed: say so in `notes` and set
-`verification.level` to `evidence_lacking`.
+`verification.level` to `evidence_lacking`. The same holds when the code sends a
+literal `{word}` it never replaces (a bug): register what is sent, set
+`evidence_lacking`, and name the bug in `notes`.
 
 **Loops.** A block the code builds in a loop (one line per item) is one variable
 whose `kind` is `expression`, with a `format_hint` that shows one item and says how
 items are joined. Do not expand the loop and do not add a condition per item.
+
+**Other limits.** A message made of text plus media (images, audio, video) is a text
+fragment for the text part, or a `runtime_value` when the media is the whole message; name
+the media in `notes`. When an environment switch or setting picks between whole prompt
+texts, register the text used by default and name the switch and the alternative in
+`notes`; the other path is not tested. A tool whose name or description is built from
+values is written as in the code with `{name}` placeholders and noted. A `slots` entry
+cannot be conditional and a constraint cannot say "at least one of"; say so in the
+slot's `description` or in `notes` and do not invent fields.
 
 **Not a prompt call.** Requests with no text prompt (speech to text, embeddings,
 image generation, moderation) are not registered. A tool loop (the same call repeated

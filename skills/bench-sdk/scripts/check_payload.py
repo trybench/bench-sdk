@@ -285,7 +285,9 @@ def check_fragments(r: Report, p: str, c: dict) -> int:
         kind = f.get("kind")
         if kind in ("text", "constant"):
             if not isinstance(text, str) or not text.strip() or len(text.encode()) > MAX_FRAGMENT_BYTES:
-                r.error(fp + ".text", f"must be 1 to {MAX_FRAGMENT_BYTES} bytes for kind {kind}")
+                hint = (" (a fragment cannot be only whitespace: put separators in a group's separator "
+                        "or in the neighbouring fragment's text)") if isinstance(text, str) and text and not text.strip() else ""
+                r.error(fp + ".text", f"must be 1 to {MAX_FRAGMENT_BYTES} bytes for kind {kind}{hint}")
             if kind == "constant" and fid not in bound:
                 r.error(fp, f"constant {fid!r} is not bound to any variable (bound_to_fragment)")
         elif kind == "runtime_value":

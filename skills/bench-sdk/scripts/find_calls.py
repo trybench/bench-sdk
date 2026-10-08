@@ -82,6 +82,25 @@ def positional_parameters(fn) -> list[str]:
     return [x.arg for x in a.posonlyargs + a.args if x.arg not in ("self", "cls")]
 
 
+def assigned_text(stmt):
+    """(name, characters of text) for `NAME = "text"` or `NAME = f"text"` statements."""
+    value = getattr(stmt, "value", None)
+    if isinstance(stmt, ast.Assign):
+        names = [t.id for t in stmt.targets if isinstance(t, ast.Name)]
+    elif isinstance(stmt, ast.AnnAssign) and isinstance(stmt.target, ast.Name):
+        names = [stmt.target.id]
+    else:
+        return
+    if isinstance(value, ast.Constant) and isinstance(value.value, str):
+        size = len(value.value)
+    elif isinstance(value, ast.JoinedStr):
+        size = sum(len(v.value) for v in value.values if isinstance(v, ast.Constant) and isinstance(v.value, str))
+    else:
+        return
+    for name in names:
+        yield name, size
+
+
 class Module(ast.NodeVisitor):
     """Functions, request sites and calls of one file."""
 
@@ -97,6 +116,21 @@ class Module(ast.NodeVisitor):
             and ((isinstance(n.value, ast.Constant) and isinstance(n.value.value, str)) or isinstance(n.value, ast.JoinedStr))
             for t in n.targets if isinstance(t, ast.Name)
         }
+        # Length of every string constant a prompt can be read from: module-level names and
+        # class-level attributes (`self.PROMPT`, `Cls.PROMPT`). A prompt kept in such a constant
+        # is the function's own text even though no literal appears in the function.
+        self.constant_chars = {}
+        self.class_constant_chars = {}
+        self.class_names = set()
+        for n in ast.walk(tree):
+            if isinstance(n, ast.ClassDef):
+                self.class_names.add(n.name)
+                for st in n.body:
+                    for name, size in assigned_text(st):
+                        self.class_constant_chars[name] = size
+        for st in getattr(tree, "body", []):
+            for name, size in assigned_text(st):
+                self.constant_chars[name] = size
         self.visit(tree)
 
     def qualified(self) -> str:
@@ -191,13 +225,22 @@ def feeding(fn, expr, line: int) -> tuple[set[str], list]:
     return need, stmts
 
 
-def own_text_chars(expr, stmts) -> int:
+def own_text_chars(expr, stmts, module=None) -> int:
     seen, total = set(), 0
     for root in [expr] + [value for _, value, _ in stmts]:
         for n in ast.walk(root):
             if isinstance(n, ast.Constant) and isinstance(n.value, str) and id(n) not in seen:
                 seen.add(id(n))
                 total += len(n.value)
+            elif module is not None and id(n) not in seen:
+                if isinstance(n, ast.Name) and n.id in module.constant_chars:
+                    seen.add(id(n))
+                    total += module.constant_chars[n.id]
+                elif (isinstance(n, ast.Attribute) and isinstance(n.value, ast.Name)
+                      and (n.value.id in ("self", "cls") or n.value.id in module.class_names)
+                      and n.attr in module.class_constant_chars):
+                    seen.add(id(n))
+                    total += module.class_constant_chars[n.attr]
     return total
 
 
@@ -300,7 +343,7 @@ def analyze(root: str, methods: set[str], exclude: set[str]) -> dict:
         else:
             fed, stmts = names_in(expr), []
         params = [p for p in parameters(fn) if p in fed and p not in ("client", "llm", "model", "api_key")]
-        chars = own_text_chars(expr, stmts)
+        chars = own_text_chars(expr, stmts, modules[s["rel"]])
         direct = chars >= OWN_TEXT_MIN or not params
         s["record"] = {
             "file": s["rel"], "function": s["qual"], "line": line, "shape": shape_of(s),
@@ -454,6 +497,9 @@ def print_text(result: dict) -> None:
         for u in result["unanalysed_framework_calls"]:
             kinds = ", ".join(f"{k} x{v}" for k, v in sorted(u["constructs"].items()))
             print(f"   {u['file']}: {kinds}  (in {', '.join(u['functions'][:4])}{', ...' if len(u['functions']) > 4 else ''})")
+    else:
+        print("\nNot analysed: no file uses the framework constructs the finder knows about. This does not rule out "
+              "requests it cannot see (dynamic dispatch, other languages, calls inside libraries).")
 
 
 def main() -> int:
