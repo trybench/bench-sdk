@@ -73,6 +73,15 @@ A call is one **job**, not one line of code. Decide as follows:
 - Different implementations of the same helper (an OpenAI and an Anthropic client
   class behind one interface) are model configurations of the same calls, not
   separate calls.
+- A flag or branch that changes only **how** the same tool or output format is
+  attached (a different helper, a different forcing mode) while the prompt, the model
+  and the tool set stay the same is **one call**. Register what the code does by
+  default as the `source: "code"` configuration and describe the other path in `notes`.
+  If the branch changes the set of tools, the model, or the place in the code that
+  makes the request, it is a different call.
+- Two request methods that do the same job for the same prompt (sync and async,
+  streaming and non-streaming, `invoke` and `stream`) are one call: key it by the
+  one the application's main path uses and name the other in `notes`.
 - If you cannot tell whether two callers do different jobs (a `mode` argument that
   changes the task), read the code and decide by the task the model is asked to do;
   say what you decided in `notes`.

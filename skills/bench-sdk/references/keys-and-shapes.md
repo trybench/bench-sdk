@@ -21,12 +21,20 @@ use `"agent"`.
   inside `build` is `build.inner`, never just `inner` or `build`). Do not skip a level
   and do not mix styles within one repository. An anonymous callback or lambda adds
   the name it is assigned to or the property it sits under (`planActivities.execute`).
+  A callback registered by name (`graph.add("label", async () => ...)`) adds that
+  label (`graph.label`), never the name of the registering method. A function that
+  is defined and called on the spot adds nothing: its requests count under the
+  enclosing function.
   For module-level code use the name the result is assigned to when there is one
   (`math_agent = create_agent(...)` gives `<file>::math_agent#0`), and `<module>#n`
   only when nothing is assigned. A request made inside a function that is itself
   inside another function counts under the full chain, so the ordinal counts only the
   requests under that exact chain. Use the same rule every time so two runs give the
   same key.
+- **Composed chains:** count model invocations, not calls of `.run`. A chain with two
+  model steps (for example rewrite the question, then answer it) sends two requests:
+  two ordinals, in the order the steps are built in the code, even if one `.invoke`
+  or `.stream` runs the whole chain. Their shapes may be equal; the key tells them apart.
 - **Chained helpers:** when a helper forwards to another helper, the producing caller
   is the first function up the chain that supplies the prompt text.
 - **`shape` is required on every call** (no call is sent without one; check each call
@@ -36,6 +44,12 @@ use `"agent"`.
   the enclosing function except self/cls, comma-joined>`. The finder prints it; in
   other languages compute the same string and hash it (`printf '%s' "$s" | shasum | cut -c1-10`).
   When the request is made by a helper that takes an options object, the argument names
-  are the object's keys. Calls of one helper in one file often share a shape; that is
+  are the object's keys. In languages with positional arguments, the names are the keys
+  of every object-literal argument (merged, sorted); positional values add nothing.
+  The request call is the method that actually triggers the request on the model, chain
+  or agent object (`invoke`, `stream`, `streamEvents`, `generate`, `run`, `create`); for
+  a composed chain it is the call that runs the chain. The model part is the model
+  expression; when the request is made on a chain or agent object and no model
+  expression is in scope, use the variable name of that object. Calls of one helper in one file often share a shape; that is
   fine: the key (with its ordinal) identifies them, and Bench uses the shape only to follow
   a call whose key changed.

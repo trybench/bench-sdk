@@ -20,9 +20,12 @@ and `offline_script` when only scripts, tests or evaluation code run it (a judge
 an evaluation scorer is offline unless the same code runs it for live traffic).
 A configuration's `provenance` says whether the model and tools were `declared`
 (read from code) or `observed` (seen in a real request); `settings.effective_provenance`
-says the same for the effective settings. A sync and an async method that do the same
-job (`invoke` and `ainvoke` of one class) are one call; register the one the application
-uses and mention the other in `notes`.
+says the same for the effective settings. A sync and an async method, or a streaming and a non-streaming method, that do the same
+job are one call; register the one the application uses and mention the other in `notes`.
+A tool that a library supplies, whose definition is not in the repository, is listed by
+the name the code uses; say in `notes` that its description and schema are not visible,
+and do not invent them. A tool defined in the repository is listed with the schema you
+can read.
 Do not add `suggested` configurations yourself. Use `effective_provenance`
 `observed` only if you saw the values in a real request; `declared` when you read
 them from code; `unknown` when you could not tell. Use `slots` for

@@ -18,6 +18,18 @@ A call is a list of `fragments`, in the order the code sends them. Each has a
   few-shot block). Bind it with `variables[].bound_to_fragment`; it is never sent
   on its own.
 
+A prompt template that is only a string, piped or passed to a chat model, is sent as
+one `user` message: register one `user` fragment, with no `system` fragment unless the
+code builds one. Roles come from what the code sends, not from the wording of the text.
+When the code passes one message array that already ends with the current turn, the
+`history` slot holds the earlier turns only and the current turn is the `user` fragment
+(usually `runtime_value`); never register the turn twice.
+A call must have at least one fragment. If the prompt text is fetched from a remote
+service, register the fragments you can see (at least the user turn as a
+`runtime_value`), set `verification.level` to `evidence_lacking`, and say where the
+text comes from in `notes`. `evidence` is optional for that level; `agent_verified`
+needs at least one checked state, so it is never used with zero.
+
 **Register the resolved string, not the code that builds it.** Source such as
 `parts = [f"Case: {x.category}", ...]` is not a prompt. Run or evaluate the code
 that builds the prompt with small sample inputs and register what it produces, with

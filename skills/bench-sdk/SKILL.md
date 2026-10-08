@@ -89,6 +89,9 @@ operation (`POST /api/ai-systems/{id}/calls`, MCP tool `bench_register_calls`).
 whose system prompt and user message are registered separately is evaluated as two
 partial calls.
 
+Field names below follow the input schema of `register_calls` (the operation catalog or
+the MCP tool definition); if any other schema file disagrees, the catalog wins.
+
 Work through the steps in order. Each step names the file in `references/` (next to
 this file) to open **before** you do it; do not work from memory of the rules.
 
