@@ -114,7 +114,10 @@ this file) to open **before** you do it; do not work from memory of the rules.
 6. **Verify before you claim it.** `agent_verified` only if you ran or evaluated the code
    that builds the prompt and every checked state matched; otherwise `declared_only`
    or `evidence_lacking`. Same file as step 5.
-7. **Register and use the result.** Open `references/after-registering.md`.
+7. **Check, register and use the result.** Write the payload to a file and run
+   `python3 <this skill's folder>/scripts/check_payload.py payload.json` until it reports
+   no errors (it never contacts Bench; it checks form, not whether the text is right, and
+   warnings are worth reading). Then register. Open `references/after-registering.md`.
 
 Rules that apply to every step:
 - Never copy a hard-coded secret into a payload; say in `notes` that you saw one.
