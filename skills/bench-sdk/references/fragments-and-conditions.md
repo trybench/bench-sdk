@@ -1,0 +1,125 @@
+# Fragments, variables and conditions
+
+Opened from the registration checklist in SKILL.md, steps 3 and 4.
+
+## Fragments
+
+A call is a list of `fragments`, in the order the code sends them. Each has a
+`role`, a `kind` and an `id`:
+
+- `kind: "text"`: prompt text. `text` is the string the model receives with every
+  variable written as `{name}`.
+- `kind: "runtime_value"`: a message with no source text that the test case supplies.
+  Send no `text`. Use it when the code sends the incoming value as the whole message
+  (the user's question, a forwarded input) with no literal words around it.
+  If the code wraps the value in its own words (`f"Task: {task}"`), the message has
+  text: use `kind: "text"` with a `{name}` variable. Never both for one message.
+- `kind: "constant"`: text that only feeds a variable of another fragment (a shared
+  few-shot block). Bind it with `variables[].bound_to_fragment`; it is never sent
+  on its own.
+
+A prompt template that is only a string, piped or passed to a chat model, is sent as
+one `user` message: register one `user` fragment, with no `system` fragment unless the
+code builds one. Roles come from what the code sends, not from the wording of the text.
+When the code passes one message array that already ends with the current turn, the
+`history` slot holds the earlier turns only and the current turn is the `user` fragment
+(usually `runtime_value`); never register the turn twice.
+A call must have at least one fragment. If the prompt text is fetched from a remote
+service, register the fragments you can see (at least the user turn as a
+`runtime_value`), set `verification.level` to `evidence_lacking`, and say where the
+text comes from in `notes`. `evidence` is optional for that level; `agent_verified`
+needs at least one checked state, so it is never used with zero.
+Before you give up on remote or stored text (a database row, a prompt service, a
+setting), look in the repository for where it starts: a migration or seed, a fixture, a
+JSON or YAML file, an admin or sync script, a default value in code. If you find a
+starting text, register it as a `text` fragment with `text_provenance: "source_text"`,
+verification `declared_only`, and say in `notes` that it is the seed and may differ from
+the live prompt. If you find none, keep `evidence_lacking`.
+
+**Register the resolved string, not the code that builds it.** Source such as
+`parts = [f"Case: {x.category}", ...]` is not a prompt. Run or evaluate the code
+that builds the prompt with small sample inputs and register what it produces, with
+the variable parts replaced by `{name}`. Set `text_provenance: "resolved_string"`
+when you obtained the text by running or evaluating code, `"source_text"` when you
+only read it from the source. Never paraphrase.
+
+- Python: import the builder and call it with simple stand-ins; no network or
+  model call is needed. Apps that call a model client directly can be captured by running the call
+  with a fake client that records `messages`.
+- TypeScript or JavaScript: extract the string expression (template literal,
+  concatenation, builder function) into a scratch file and run it with `tsx` or
+  `node`. Run it as TypeScript when the snippet has type syntax (`as string`).
+- Go and Rust: print the builder's output from a scratch test or example.
+- If a prompt is fetched from a remote service, or the framework wraps your text in
+  its own template (supervisor agents add guidelines and a memory block), say so in
+  `notes`; the text in the repository is not what the model receives.
+- If you cannot resolve a piece, register what you can and set
+  `verification.level` to `evidence_lacking`. Do not guess.
+
+A fragment's text cannot be only whitespace. A separator the code emits between
+fragments goes into the group's `separator` (or `header`); between two fixed fragments,
+add it to the end of the earlier fragment's text or the start of the later one.
+
+**Tip:** when you run a builder, pass `{name}` strings as its inputs; the output then
+already contains the placeholders, and a mismatch with your fragments shows up at once.
+
+**How fragments are joined.** The text of all included `system` fragments is
+concatenated in order, with nothing between them, into one system message; a group
+adds its `header` before its first included fragment and its `separator` between
+included fragments. Fragments sharing a `message_group` are concatenated the same way
+into one message. Fragments of other roles, without a `message_group`, are separate
+messages. So put every newline the code emits into the text, the header or the
+separator. History and injected context go in `slots`, not in fragments.
+
+**Braces.** Only `{identifier}` is a placeholder. JSON examples and other braces in
+the resolved text stay as they are (`{"a": 1}` is fine). Text that must contain a
+literal `{word}` cannot be expressed: say so in `notes` and set
+`verification.level` to `evidence_lacking`. The same holds when the code sends a
+literal `{word}` it never replaces (a bug): register what is sent, set
+`evidence_lacking`, and name the bug in `notes`.
+
+**Loops.** A block the code builds in a loop (one line per item) is one variable
+whose `kind` is `expression`, with a `format_hint` that shows one item and says how
+items are joined. Do not expand the loop and do not add a condition per item.
+
+**Other limits.** A message made of text plus media (images, audio, video) is a text
+fragment for the text part, or a `runtime_value` when the media is the whole message; name
+the media in `notes`. When an environment switch or setting picks between whole prompt
+texts, register the text used by default and name the switch and the alternative in
+`notes`; the other path is not tested. A tool whose name or description is built from
+values is written as in the code with `{name}` placeholders and noted. A `slots` entry
+cannot be conditional and a constraint cannot say "at least one of"; say so in the
+slot's `description` or in `notes` and do not invent fields.
+
+**Not a prompt call.** Requests with no text prompt (speech to text, embeddings,
+image generation, moderation) are not registered. A tool loop (the same call repeated
+with a growing message list) is one call: register the first request.
+
+For each variable give `name`, `expr` (the expression exactly as written, e.g.
+`row[0]` or `item.name`) and, when you ran the code, `format_hint` and
+`source`: `literal`, `code`, `command_output` (a value from running a command) or
+`runtime_input`.
+
+## Conditions
+
+When the code decides which pieces to send (`if "slot" in present_types:`, a
+language switch, optional rule blocks), do not register one call per combination and
+do not merge every piece in. Register the pieces as fragments with a `when`
+expression over named `conditions`:
+
+```json
+"conditions": [{"id": "slot", "description": "the batch has a slot cluster",
+                "code_ref": "\"slot\" in present_types"}],
+"fragments": [{"id": "rule_slot", "role": "system", "kind": "text", "group": "rules",
+               "when": "slot", "text": "- For a slot cluster ..."}]
+```
+
+`when` uses condition ids with `and`, `or`, `not` and parentheses only. Use
+`groups` for text the code emits around a run of fragments (a header before the
+first included fragment, a separator between them). Use `message_group` when
+several fragments form one message that is not the system message. Add
+`constraints` (`exactly_one`, `not_both`, `implies`, each with a `source`) when the
+code makes combinations impossible; each constraint names at least two conditions (a
+single condition needs none). `output_format` belongs to the call, next to
+`configurations`, not inside a configuration. A condition that changes which model, tools or
+place in the code is used is a different call, not a condition.

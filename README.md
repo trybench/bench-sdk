@@ -66,10 +66,11 @@ for that repository, branch and name on the first trace and draws the runtime,
 each agent, the model calls and tools per agent and the hand-offs between agents
 from the spans it receives. It does not infer business intent or assert that the
 runtime has already been evaluated. Traces never carry the editable prompt
-template: register the prompts the system sends with the `register_prompts`
-platform operation (or the `bench_register_prompts` MCP tool) and record purpose
-and rules with `put_context_source`; no GitHub connection is needed. Pass each
-prompt's actual `componentId` in a span, or link recorded spans to a prompt in
+template: register the model calls the system makes (one entry per call, with its
+messages, model and conditions) with the `register_calls` platform operation (or
+the `bench_register_calls` MCP tool; `register_prompts` is deprecated) and record
+purpose and rules with `put_context_source`; no GitHub connection is needed. Pass
+each call's actual `componentId` in a span, or link recorded spans to a prompt in
 Production. Nested `bench.trace` calls preserve trace/parent IDs through async
 execution.
 
@@ -192,7 +193,7 @@ are separate between environments. See the [headless guide](https://docs.usebenc
 TypeScript/Python/Rust export `BenchPlatform`; Go provides `NewPlatform`.
 `call` (`Call` in Go) accepts an operation name and `path`, `query`, `body`, or
 `form`/`files` for explicit uploads. `operations()` (`Operations()` in Go) returns
-the contract, including `register_prompts` and `put_context_source`. These clients
+the contract, including `register_calls` and `put_context_source`. These clients
 are independent of tracing and local app evaluation.
 
 ```ts
