@@ -155,7 +155,11 @@ Example payload (one call with a system prompt and a user template):
 Bench judges results against the system's purpose and rules, so after the
 system exists, record them from the repository with `put_context_source`
 (`PUT /api/ai-systems/{id}/context/sources`, MCP `bench_put_context_source`),
-reading `expected_version` from `get_system_context` first:
+reading `expected_version` from `get_system_context` first. Leave a source's `id`
+out when you create it (Bench assigns one); to update a source you wrote, send back
+the `id` it returned. Never invent ids: the API refuses any id that does not start
+with `manual-` ("Imported sources cannot be overwritten manually"), which also
+protects the ids of imported sources.
 
 - **Purpose** (category `business_intent`, kind `document`, scope `system`): who
   the system serves, what it does, what a good result looks like. One short text.
