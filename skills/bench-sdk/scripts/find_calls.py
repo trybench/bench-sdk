@@ -225,6 +225,47 @@ def feeding(fn, expr, line: int) -> tuple[set[str], list]:
     return need, stmts
 
 
+def longest_text(roots, module) -> int:
+    """Length of the longest single piece of prompt text in `roots`: one string literal, one f-string's
+    literal parts, or one string constant. Short glue strings (role names, dictionary keys) never add up."""
+    best, inner = 0, set()
+    for root in roots:
+        for n in ast.walk(root):
+            if isinstance(n, ast.JoinedStr):
+                inner.update(id(v) for v in n.values)
+        for n in ast.walk(root):
+            if isinstance(n, ast.JoinedStr):
+                best = max(best, sum(len(v.value) for v in n.values if isinstance(v, ast.Constant) and isinstance(v.value, str)))
+            elif isinstance(n, ast.Constant) and isinstance(n.value, str) and id(n) not in inner:
+                best = max(best, len(n.value))
+            elif isinstance(n, ast.Name) and n.id in module.constant_chars:
+                best = max(best, module.constant_chars[n.id])
+            elif (isinstance(n, ast.Attribute) and isinstance(n.value, ast.Name)
+                  and (n.value.id in ("self", "cls") or n.value.id in module.class_names)
+                  and n.attr in module.class_constant_chars):
+                best = max(best, module.class_constant_chars[n.attr])
+    return best
+
+
+def helper_text_chars(roots, definitions, modules) -> int:
+    """Prompt text a repo helper RETURNS when the request's prompt is built by calling it: only helpers with
+    exactly one definition by that name count, and only one long piece of text (not many short strings)."""
+    best = 0
+    for root in roots:
+        for call in ast.walk(root):
+            if not isinstance(call, ast.Call):
+                continue
+            name = callee_name(call)
+            if not name or len(definitions.get(name, [])) != 1:
+                continue
+            rel, _, helper = definitions[name][0]
+            for ret in ast.walk(helper):
+                if isinstance(ret, ast.Return) and ret.value is not None:
+                    _, fed = feeding(helper, ret.value, ret.lineno)
+                    best = max(best, longest_text([ret.value] + [v for _, v, _ in fed], modules[rel]))
+    return best
+
+
 def own_text_chars(expr, stmts, module=None) -> int:
     seen, total = set(), 0
     for root in [expr] + [value for _, value, _ in stmts]:
@@ -344,6 +385,10 @@ def analyze(root: str, methods: set[str], exclude: set[str]) -> dict:
             fed, stmts = names_in(expr), []
         params = [p for p in parameters(fn) if p in fed and p not in ("client", "llm", "model", "api_key")]
         chars = own_text_chars(expr, stmts, modules[s["rel"]])
+        if chars < OWN_TEXT_MIN:
+            built = helper_text_chars([expr] + [value for _, value, _ in stmts], definitions, modules)
+            if built >= OWN_TEXT_MIN:
+                chars += built
         direct = chars >= OWN_TEXT_MIN or not params
         s["record"] = {
             "file": s["rel"], "function": s["qual"], "line": line, "shape": shape_of(s),

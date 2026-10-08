@@ -65,6 +65,65 @@ class DirectCalls(unittest.TestCase):
         '''})
         self.assertEqual(by_key(r)["app/h.py::ask#0"]["kind"], "wrapper")
 
+    def test_a_function_that_builds_its_prompt_with_a_text_helper_owns_the_call(self):
+        r = run({"app/prompts.py": '''
+            def build_title_prompt(question, answer):
+                return f"Write a short title of three to eight words for a chat that began with: {question} and {answer}"
+        ''', "app/svc.py": '''
+            from prompts import build_title_prompt
+            class Chat:
+                def make_title(self, manager, question, answer):
+                    prompt = build_title_prompt(question, answer)
+                    return manager.chat.completions.create(model="m", messages=[{"role": "user", "content": prompt}])
+        '''})
+        self.assertEqual(by_key(r)["app/svc.py::Chat.make_title#0"]["kind"], "direct")
+
+    def test_a_helper_with_only_short_glue_strings_does_not_make_a_wrapper_direct(self):
+        r = run({"app/msgs.py": '''
+            def to_messages(system, history, text):
+                out = [{"role": "system", "content": system}]
+                for h in history:
+                    out.append({"role": "user", "content": h["user"]})
+                    out.append({"role": "assistant", "content": h["bot"]})
+                out.append({"role": "user", "content": text})
+                return out
+        ''', "app/svc.py": '''
+            from msgs import to_messages
+            def reply(client, system, history, text):
+                messages = to_messages(system, history, text)
+                return client.chat.completions.create(model="m", messages=messages)
+        '''})
+        self.assertEqual(by_key(r)["app/svc.py::reply#0"]["kind"], "wrapper")
+
+    def test_a_helper_name_defined_twice_is_not_trusted(self):
+        r = run({"app/a.py": '''
+            def build(x):
+                return f"Summarize the following customer review in one paragraph, keeping the tone neutral: {x}"
+        ''', "app/b.py": '''
+            def build(x):
+                return x
+        ''', "app/svc.py": '''
+            from a import build
+            def go(client, x):
+                prompt = build(x)
+                return client.chat.completions.create(model="m", messages=[{"role": "user", "content": prompt}])
+        '''})
+        self.assertEqual(by_key(r)["app/svc.py::go#0"]["kind"], "wrapper")
+
+    def test_long_error_strings_inside_a_helper_are_not_prompt_text(self):
+        r = run({"app/conv.py": '''
+            def convert(messages):
+                if not messages:
+                    raise ValueError("the conversation must contain at least one message before a request is sent")
+                return [{"role": m["role"], "content": m["content"]} for m in messages]
+        ''', "app/svc.py": '''
+            from conv import convert
+            def chat(client, messages):
+                payload = convert(messages)
+                return client.chat.completions.create(model="m", messages=payload)
+        '''})
+        self.assertEqual(by_key(r)["app/svc.py::chat#0"]["kind"], "wrapper")
+
     def test_keys_use_qualified_names_and_source_order_ordinals(self):
         r = run({"a.py": '''
             class Service:
