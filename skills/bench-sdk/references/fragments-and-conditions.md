@@ -50,6 +50,13 @@ only read it from the source. Never paraphrase.
   concatenation, builder function) into a scratch file and run it with `tsx` or
   `node`. Run it as TypeScript when the snippet has type syntax (`as string`).
 - Go and Rust: print the builder's output from a scratch test or example.
+- Whatever language you use, running app code to capture text can also start the app's
+  Bench tracing. Run these checks with `BENCH_API_KEY` set to an empty value (for
+  example `BENCH_API_KEY= python …`), not unset: many apps read their `.env` on import
+  and put an unset key back, but leave an empty one alone. Compare the `trace_count` of
+  your repository and branch in `bench_sdk_status` before and after: empty traces from
+  a fake client are noise in the system. Send one real traced request later, as the
+  setup steps say.
 - If a prompt is fetched from a remote service, or the framework wraps your text in
   its own template (supervisor agents add guidelines and a memory block), say so in
   `notes`; the text in the repository is not what the model receives.
