@@ -1,11 +1,12 @@
 # Changelog
 
-## Unreleased
+## 0.2.3 (beta)
 
 - `register_calls` platform operation: register one entry per model call (messages as fragments, model
   configuration, conditions, verification level) instead of one per prompt. `register_prompts` is deprecated.
 - Skill guidance for registering calls: code-derived keys, resolved strings, conditions, verification.
 - Skill: say how to choose context source ids (start with `manual-`; reuse the id to update).
+- Skill: when running app code to capture prompt text, set `BENCH_API_KEY` to an empty value so no empty traces are sent.
 - Trace metadata allow-list adds `gen_ai.request.temperature`, `top_p`, `top_k` and `max_tokens` in all four
   clients, so observed model settings can be compared with declared ones.
 
