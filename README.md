@@ -6,13 +6,13 @@ make up an application. The SDK records what actually runs so Bench can draw the
 system, measure its quality and cost, and run repeatable checks on prompts, tools
 and resulting state.
 
-**Beta, version 0.2.2.** APIs may evolve. Pin versions and test upgrades in staging.
+**Beta, version 0.2.3.** APIs may evolve. Pin versions and test upgrades in staging.
 
 | Language | Install | Guide | Example |
 | --- | --- | --- | --- |
 | TypeScript / JavaScript | `npm install @benchai/sdk` | [TypeScript and JavaScript](https://docs.usebench.ai/sdk/typescript) | [Refund simulation](https://github.com/trybench/bench-sdk/blob/main/examples/typescript/simulate-refund.mjs) |
 | Python | `python -m pip install trybench-sdk` | [Python](https://docs.usebench.ai/sdk/python) | [Refund simulation](https://github.com/trybench/bench-sdk/blob/main/python/examples/simulate_refund.py) |
-| Go | `go get github.com/trybench/bench-sdk/go@v0.2.2` | [Go](https://docs.usebench.ai/sdk/go) | [Refund simulation](https://github.com/trybench/bench-sdk/blob/main/go/examples/refund/main.go) |
+| Go | `go get github.com/trybench/bench-sdk/go@v0.2.3` | [Go](https://docs.usebench.ai/sdk/go) | [Refund simulation](https://github.com/trybench/bench-sdk/blob/main/go/examples/refund/main.go) |
 | Rust | `cargo add trybench-sdk` | [Rust](https://docs.usebench.ai/sdk/rust) | [Refund simulation](https://github.com/trybench/bench-sdk/blob/main/rust/examples/refund.rs) |
 
 All four packages support tracing, external span forwarding
@@ -66,10 +66,11 @@ for that repository, branch and name on the first trace and draws the runtime,
 each agent, the model calls and tools per agent and the hand-offs between agents
 from the spans it receives. It does not infer business intent or assert that the
 runtime has already been evaluated. Traces never carry the editable prompt
-template: register the prompts the system sends with the `register_prompts`
-platform operation (or the `bench_register_prompts` MCP tool) and record purpose
-and rules with `put_context_source`; no GitHub connection is needed. Pass each
-prompt's actual `componentId` in a span, or link recorded spans to a prompt in
+template: register the model calls the system makes (one entry per call, with its
+messages, model and conditions) with the `register_calls` platform operation (or
+the `bench_register_calls` MCP tool; `register_prompts` is deprecated) and record
+purpose and rules with `put_context_source`; no GitHub connection is needed. Pass
+each call's actual `componentId` in a span, or link recorded spans to a prompt in
 Production. Nested `bench.trace` calls preserve trace/parent IDs through async
 execution.
 
@@ -192,7 +193,7 @@ are separate between environments. See the [headless guide](https://docs.usebenc
 TypeScript/Python/Rust export `BenchPlatform`; Go provides `NewPlatform`.
 `call` (`Call` in Go) accepts an operation name and `path`, `query`, `body`, or
 `form`/`files` for explicit uploads. `operations()` (`Operations()` in Go) returns
-the contract, including `register_prompts` and `put_context_source`. These clients
+the contract, including `register_calls` and `put_context_source`. These clients
 are independent of tracing and local app evaluation.
 
 ```ts
@@ -207,5 +208,5 @@ const context = await platform.call('get_system_context', { path: { id: 123 } })
 
 Files accept text/bytes. Errors preserve status/code/reference. Writes never retry
 automatically, redirects never forward credentials, and requests are bounded.
-The platform client ships in the published 0.2.2 packages. Source installation
+The platform client ships in the published 0.2.3 packages. Source installation
 commands are documented in the [platform SDK guide](https://docs.usebench.ai/sdk/platform#install-the-platform-clients).

@@ -1,6 +1,6 @@
 # Bench Rust SDK · Beta
 
-**Beta, version 0.2.2.** Pin versions and test upgrades in staging.
+**Beta, version 0.2.3.** Pin versions and test upgrades in staging.
 
 Bench evaluates and improves AI systems: agents, prompts, tools, model
 configuration and hand-offs. This SDK traces Rust applications, agents and tools
@@ -42,8 +42,8 @@ that already produces finished spans (an OpenTelemetry exporter or its own
 callbacks), forward each one with `bench.record_external_span(ExternalSpan { .. })`,
 keeping its trace and span IDs; the kind is inferred from `gen_ai.*` attributes.
 The SDK does not patch frameworks itself. Set `SpanInput.component_id` using a real
-Bench prompt component to connect events to its criteria; register the prompts the
-system sends with the `register_prompts` platform operation (no GitHub connection
+Bench prompt component to connect events to its criteria; register the model calls the
+system makes with the `register_calls` platform operation (no GitHub connection
 needed) to obtain those IDs.
 
 `capture_content` defaults to `false`. Inputs, outputs and arbitrary attributes
@@ -141,7 +141,7 @@ crate is not an OTLP exporter or collector.
 ## Headless platform management
 
 `trybench_sdk::BenchPlatform` calls every Bench API operation by name, including
-`register_prompts` and `put_context_source`; `operations()` returns the contract.
+`register_calls` and `put_context_source`; `operations()` returns the contract.
 See the root README and the [platform guide](https://docs.usebench.ai/sdk/platform)
 for this language's example. Tracing, real app evaluation and simulation APIs are
 independent of it. Platform calls do not execute the app implicitly.

@@ -77,38 +77,89 @@ Send one real request after setup and confirm the system appears under
 AI Systems with its agents, models and tools. Metadata-only capture is enough
 for discovery; do not enable content capture for it.
 
-## Register the prompts you can see
+## Register the model calls you can see
 
-Traces never carry the editable prompt template, so a runtime system has no
-prompt components until they are registered. You are inside the repository:
-find every prompt the system sends (system prompts, instructions, templates in
-code, YAML, Markdown or JSON, prompts assembled across files) and register them
-on the system with the `register_prompts` operation
-(`POST /api/ai-systems/{id}/prompts`, MCP tool `bench_register_prompts`), using
-the same key as the SDK:
+Traces never carry the editable prompt, so a runtime system has no prompt
+components until you register them. You are inside the repository. Register
+**calls, not prompts**: one entry per job the code sends to a model. A call's system
+prompt, user template, few-shot turns and injected context belong in the same entry,
+because Bench evaluates the call as the code sends it. Use the `register_calls`
+operation (`POST /api/ai-systems/{id}/calls`, MCP tool `bench_register_calls`).
+`register_prompts` is deprecated: it stores each prompt as its own unit, so a call
+whose system prompt and user message are registered separately is evaluated as two
+partial calls.
+
+Field names below follow the input schema of `register_calls` (the operation catalog or
+the MCP tool definition); if any other schema file disagrees, the catalog wins.
+
+Work through the steps in order. Each step names the file in `references/` (next to
+this file) to open **before** you do it; do not work from memory of the rules.
+
+1. **Find the calls.** In a Python repository run `python3 <this skill's folder>/scripts/find_calls.py <repo root>`
+   (it never runs the repo). Its list is a starting point, never the whole answer:
+   read every file in its "not analysed" list. A call is one **job**: callers that do
+   different jobs through one shared helper are separate calls; optional pieces inside
+   one caller are conditions. Skip speech, embeddings, images and moderation.
+   Open `references/finding-calls.md`.
+2. **Give each call a key and a shape.** `key` = `<file>::<qualified function>#<ordinal>`,
+   derived from the code, never a name you chose or a line number; send `shape` on every call,
+   computed (the finder prints it), never invented. Open `references/keys-and-shapes.md`.
+3. **Write the request as fragments.** Register the resolved string (run or evaluate the
+   builder), variables as `{name}`, the user turn as a `runtime_value` fragment when it
+   has no text of its own. Open `references/fragments-and-conditions.md`.
+4. **Conditions.** If the code decides which pieces to send, use `conditions` and
+   `when`; never one call per combination. Same file as step 3.
+5. **Configuration, slots, tools.** Exactly one configuration with `source: "code"`;
+   `model` is required. Open `references/configuration-and-verification.md`.
+6. **Verify before you claim it.** `agent_verified` only if you ran or evaluated the code
+   that builds the prompt and every checked state matched; otherwise `declared_only`
+   or `evidence_lacking`. Same file as step 5.
+7. **Check, register and use the result.** Write the payload to a file and run
+   `python3 <this skill's folder>/scripts/check_payload.py payload.json` until it reports
+   no errors (it never contacts Bench; it checks form, not whether the text is right, and
+   warnings are worth reading). Then register. Open `references/after-registering.md`.
+
+Rules that apply to every step:
+- Never copy a hard-coded secret into a payload; say in `notes` that you saw one.
+- Never paraphrase prompt text and never invent text, models, tools or settings.
+- If you cannot resolve something, register what you can and set
+  `verification.level` to `evidence_lacking`. Do not guess.
+- Say in `notes` anything the code does not show: framework-added text, remote prompts,
+  a model chosen at runtime, a shared request site.
+- Registration is repeatable, edits no source, starts no evaluation, and needs no GitHub
+  connection.
+
+Example payload (one call with a system prompt and a user template):
 
 ```json
 {"repo_full_name": "owner/repo", "branch": "main",
- "prompts": [{"path": "src/agents/prompts/analyzer.yaml", "line": 3, "end_line": 40,
-              "name": "analyzer system prompt", "role": "system",
-              "content": "<exact template text, variables unfilled>",
-              "agent": "Analyzer agent"}]}
+ "calls": [{"key": "src/services/recipe.py::extract_recipe#0",
+            "key_source": "ast", "shape": "a1b2c3d4e5", "name": "recipe extraction",
+            "scope": "production",
+            "configurations": [{"source": "code", "provider": "openai", "model": "gpt-5.4-nano",
+                                "settings": {"declared": {}, "effective": {"reasoning_effort": "low"},
+                                             "effective_provenance": "declared"}}],
+            "fragments": [
+              {"id": "system", "role": "system", "kind": "text", "text_provenance": "resolved_string",
+               "text": "You are a recipe parser. Return ONLY valid JSON."},
+              {"id": "user", "role": "user", "kind": "text", "text_provenance": "resolved_string",
+               "text": "Extract the recipe from this text:\n\n{content}",
+               "variables": [{"name": "content", "expr": "content", "source": "runtime_input"}]}],
+            "verification": {"level": "agent_verified",
+                             "evidence": {"method": "ran the call with a fake client and compared messages",
+                                          "states_checked": 1, "states_matched": 1}}}]}
 ```
-
-Rules: cite the real file and line; copy the text exactly, never paraphrase or
-invent; set `agent` to the agent's runtime span name so the prompt lands inside
-that agent's node; include `model` only when the account has model selection.
-The response returns component ids: put each on the spans of the model call
-that sends that prompt (`bench.component_id` / `componentId`) so runtime
-evidence links to it. Registration is idempotent per path and line, edits no
-source, starts no evaluation, and does not need a GitHub connection.
 
 ## Write down what the system is for
 
 Bench judges results against the system's purpose and rules, so after the
 system exists, record them from the repository with `put_context_source`
 (`PUT /api/ai-systems/{id}/context/sources`, MCP `bench_put_context_source`),
-reading `expected_version` from `get_system_context` first:
+reading `expected_version` from `get_system_context` first. The schema requires an
+`id` on every source: give each new source an id that starts with `manual-` (for
+example `manual-purpose`) and reuse that id to update it. Any other id is refused
+("Imported sources cannot be overwritten manually"), because ids without that prefix
+belong to imported sources.
 
 - **Purpose** (category `business_intent`, kind `document`, scope `system`): who
   the system serves, what it does, what a good result looks like. One short text.

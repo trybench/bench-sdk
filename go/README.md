@@ -1,6 +1,6 @@
 # Bench Go SDK · Beta
 
-**Beta, version 0.2.2.** Pin versions and test upgrades in staging.
+**Beta, version 0.2.3.** Pin versions and test upgrades in staging.
 
 Bench evaluates and improves AI systems: agents, prompts, tools, model
 configuration and hand-offs. This SDK traces Go applications, agents and tools so
@@ -8,7 +8,7 @@ Bench can draw the system from what runs. Go 1.22+. Standard library only.
 Apache-2.0. Install the public Go module:
 
 ```sh
-go get github.com/trybench/bench-sdk/go@v0.2.2
+go get github.com/trybench/bench-sdk/go@v0.2.3
 ```
 
 ```go
@@ -42,7 +42,7 @@ own callbacks), forward each one with `client.RecordExternalSpan(bench.ExternalS
 keeping its trace and span IDs; `bench.InferSpanKind` maps `gen_ai.*` attributes to
 AGENT, LLM or TOOL. The SDK does not patch frameworks itself. Set `ComponentID` to
 an existing Bench prompt component to connect events to its saved criteria;
-register the prompts the system sends with the `register_prompts` platform
+register the model calls the system makes with the `register_calls` platform
 operation (no GitHub connection needed) to obtain those IDs.
 
 Content capture is off by default. To enable it, set `CaptureContent: true` and
@@ -138,7 +138,7 @@ package is not an OTLP exporter or collector.
 ## Headless platform management
 
 `bench.NewPlatform` returns a client whose `Call` runs every Bench API operation by
-name, including `register_prompts` and `put_context_source`; `Operations()` returns
+name, including `register_calls` and `put_context_source`; `Operations()` returns
 the contract. See the root README and the [platform guide](https://docs.usebench.ai/sdk/platform)
 for this language's example. Tracing, real app evaluation and simulation APIs are
 independent of it. Platform calls do not execute the app implicitly.

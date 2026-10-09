@@ -1,6 +1,6 @@
 # Bench Python SDK · Beta
 
-**Beta, version 0.2.2.** Pin versions and test upgrades in staging.
+**Beta, version 0.2.3.** Pin versions and test upgrades in staging.
 
 Bench evaluates and improves AI systems: agents, prompts, tools, model
 configuration and hand-offs. This SDK traces Python applications, agents and tools
@@ -50,8 +50,8 @@ Add a `redact(value)` callback for application-specific data. These rules do not
 recognize every personal detail in free text.
 
 Set `component_id` to a real prompt component from Bench to link the event to
-its criteria. Register the prompts the system sends with the `register_prompts`
-platform operation (no GitHub connection needed); it returns the component IDs.
+its criteria. Register the model calls the system makes with the `register_calls`
+platform operation (no GitHub connection needed); it returns one component ID per call.
 Use operational attributes such as `gen_ai.usage.input_tokens` and
 `gen_ai.usage.output_tokens` for usage counts. Never invent component IDs.
 
@@ -145,7 +145,7 @@ OpenTelemetry bridge consumes spans, it is not an OTLP exporter or collector.
 ## Headless platform management
 
 `bench_sdk.BenchPlatform` calls every Bench API operation by name, including
-`register_prompts` and `put_context_source`; `operations()` returns the contract.
+`register_calls` and `put_context_source`; `operations()` returns the contract.
 See the root README and the [platform guide](https://docs.usebench.ai/sdk/platform)
 for this language's example. Tracing, real app evaluation and simulation APIs are
 independent of it. Platform calls do not execute the app implicitly.
