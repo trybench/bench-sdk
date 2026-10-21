@@ -172,6 +172,32 @@ belong to imported sources.
   cheaper options before production traffic exists. Estimate from code and
   configuration when nothing is documented, and say that it is an estimate.
 
+**Tag every rule with the calls it applies to.** In the rules source
+(`manual-rules`) write each rule as its own bullet that starts with a header in
+square brackets: `- [applies_to=...; basis=...; source=...] the rule`.
+`applies_to` is `all` for a rule that holds for every call, `audience:end_user` or
+`audience:internal` for a rule about who reads the output, or the keys of the
+calls you registered, joined by commas. `basis` is `stated` when the rule is
+written in that call's own prompt or code, and `inferred` when you worked it out.
+`source` is the file (and line) it came from. If you cannot tell which calls a
+rule applies to, write `applies_to=all; basis=inferred`: never guess a narrower
+scope. One rule per bullet; do not write rules in prose paragraphs. Use each call's key
+exactly as you registered it (for example `src/a.py::run#0`); never renumber or retype it. Use these bracket headers
+only in the rules source and in `manual-call-profiles`; write every other source in
+plain text. Keep each source under 8,000 characters: Bench cuts longer sources and
+the rules after the cut are not used. If the rules do not fit, split them across
+several sources whose ids start with `manual-` (for example `manual-rules` and
+`manual-rules-2`), each with category `rules_constraints` and tagged bullets. Before saving a rules or
+call-profiles source, run `python3 <this skill's folder>/scripts/check_rule_tags.py <file>`
+(add `--profile` for the call-profiles source) and fix every malformed bullet.
+
+**Describe each call.** In a second source (`manual-call-profiles`, category
+`system_structure`) write one bullet per registered call:
+`- [call=<key>; audience=end_user|internal|unknown; basis=stated|inferred; source=<file[:line]>] role: ...; outcome: ...`
+(`basis` is exactly the word `stated` or `inferred`, nothing else).
+Use `audience=end_user` only when the call's output reaches a person without
+further processing, and `unknown` when you cannot tell.
+
 Cite the files each statement came from and phrase it as derived from the
 repository. The owner reviews and can edit or add more later in Bench. Never
 invent business policy, reference answers or scores that are not in the files.
