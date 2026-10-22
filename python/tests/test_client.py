@@ -163,3 +163,16 @@ class PrivacyBudgetTests(unittest.TestCase):
         for branch in ['person@example.test', 'bench_sk_NOT_A_REAL_SECRET', 'bad\nbranch']:
             with self.assertRaises(ValueError):
                 Bench(api_key='bench_sk_synthetic_test_key', repository='fixture/python', branch=branch)
+
+    def test_names_that_contain_key_prefixes_inside_words_are_accepted(self):
+        fixture = json.loads((Path(__file__).resolve().parent / "fixtures/privacy.json").read_text())
+        for repository in fixture["accepted_repositories"]:
+            for branch in fixture["accepted_branches"]:
+                client = Bench(api_key='bench_sk_synthetic_test_key', repository=repository, branch=branch)
+                client.shutdown()
+        client = Bench(api_key='bench_sk_synthetic_test_key', repository='acme/helpdesk-assistant', branch='main')
+        self.assertEqual(client._system, 'helpdesk-assistant')
+        client.shutdown()
+        for repository in ['sk-abcdefghijklmnopqrst/app', 'acme/bench_sk_abcdefghijklmnopqrst']:
+            with self.assertRaises(ValueError):
+                Bench(api_key='bench_sk_synthetic_test_key', repository=repository, branch='main')

@@ -31,3 +31,10 @@ test('distributed privacy fixtures match the common contract',()=>{
   assert.equal(readFileSync(new URL(path,import.meta.url),'utf8'),canonical,path);
  }
 });
+
+test('names that contain key prefixes inside words are accepted, real keys are not',()=>{
+ const fixture=JSON.parse(readFileSync(new URL('./fixtures/privacy.json',import.meta.url),'utf8'));
+ const base={apiKey:'bench_sk_synthetic_test_key',fetch:async()=>new Response('{}',{status:201})};
+ for(const repository of fixture.accepted_repositories)for(const branch of fixture.accepted_branches)assert.doesNotThrow(()=>new Bench({...base,repository,branch}),repository+' '+branch);
+ for(const repository of ['sk-abcdefghijklmnopqrst/app','acme/bench_sk_abcdefghijklmnopqrst'])assert.throws(()=>new Bench({...base,repository,branch:'main'}),repository);
+});

@@ -203,3 +203,29 @@ func TestRedactorPanicDoesNotChangeAppResult(t *testing.T) {
 		t.Fatal("telemetry interrupted app")
 	}
 }
+
+func TestNamesWithKeyPrefixesInsideWordsAreAccepted(t *testing.T) {
+	data, err := os.ReadFile("testdata/privacy.json")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var fixture struct {
+		AcceptedRepositories []string `json:"accepted_repositories"`
+		AcceptedBranches     []string `json:"accepted_branches"`
+	}
+	if err = json.Unmarshal(data, &fixture); err != nil {
+		t.Fatal(err)
+	}
+	for _, repository := range fixture.AcceptedRepositories {
+		for _, branch := range fixture.AcceptedBranches {
+			if _, err := bench.New(bench.Options{APIKey: "bench_sk_synthetic_test_key", Repository: repository, Branch: branch}); err != nil {
+				t.Fatalf("%s %s rejected: %v", repository, branch, err)
+			}
+		}
+	}
+	for _, repository := range []string{"sk-abcdefghijklmnopqrst/app", "acme/bench_sk_abcdefghijklmnopqrst"} {
+		if _, err := bench.New(bench.Options{APIKey: "bench_sk_synthetic_test_key", Repository: repository, Branch: "main"}); err == nil {
+			t.Fatalf("%s accepted", repository)
+		}
+	}
+}
