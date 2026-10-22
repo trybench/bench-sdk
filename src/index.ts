@@ -78,7 +78,7 @@ function redact(value: unknown, depth = 0, maxItems = 100): unknown {
   }
   return value
   .replace(/(?<![a-z])(?:bench_sk_|apikey_|e2b_|sk-)[a-zA-Z0-9_-]{8,}|Bearer\s+[a-zA-Z0-9._~+\/-]+/gi,"[REDACTED_SECRET]")
-  .replace(/(?<![a-z0-9.!#$%&'*+\/=?^_`{|}~-])[a-z0-9.!#$%&'*+\/=?^_`{|}~-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+/gi,"[REDACTED_EMAIL]")
+  .replace(/(?<![a-z0-9._%+-])[a-z0-9._%+-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+/gi,"[REDACTED_EMAIL]")
   .replace(/\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b/g, value => isIP(value) === 4 ? '[REDACTED_IP]' : value)
   .replace(/\b(?:[0-9]{4}(?:[ -][0-9]{4}){3}[ -][0-9]{3}|[0-9]{4}(?:[ -][0-9]{4}){3}|[0-9]{4}[ -][0-9]{6}[ -][0-9]{5}|[0-9]{13,19})\b/g, value => {
    const digits = value.replace(/[ -]/g, '');

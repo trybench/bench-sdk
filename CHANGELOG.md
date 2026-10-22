@@ -4,6 +4,7 @@
 
 - Skill: write each rule in the rules source as a tagged bullet (`applies_to`, `basis`, `source`) and describe each registered call (audience, role, outcome) in `manual-call-profiles`, so Bench can tell which calls a rule applies to. New `check_rule_tags.py` reports rules without a valid tag, and (with the registered call keys) tags that name a call that is not registered; such a tag is treated as unclear, never as a reason to drop a rule. Sources stay under 8,000 characters.
 - Redaction (all four clients): `bench_sk_`, `apikey_`, `sk-` (and `e2b_` in TypeScript) count as a key only at the start of a token, so words like `helpdesk-assistant` or `task-runner-service` are no longer rewritten and a repository or branch containing them is no longer rejected. A real key glued directly after a letter is no longer redacted.
+- Redaction (all four clients): the email pattern no longer allows `=`, `/` and similar punctuation before the `@`, so `source=docs/contact@example.test` keeps `source=docs/` and only the address is replaced.
 
 ## 0.2.3 (beta)
 

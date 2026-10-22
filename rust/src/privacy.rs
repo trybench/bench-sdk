@@ -13,7 +13,7 @@ static SECRET: LazyLock<Regex> = LazyLock::new(|| {
         .unwrap()
 });
 static EMAIL: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+").unwrap()
+    Regex::new(r"(?i)[a-z0-9._%+-]+@[a-z0-9-]+(?:\.[a-z0-9-]+)+").unwrap()
 });
 static PHONE: LazyLock<Regex> = LazyLock::new(|| Regex::new(r"\+\d[\d ()-]{8,}\d").unwrap());
 static IP: LazyLock<Regex> =
