@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Skill: write each rule in the rules source as a tagged bullet (`applies_to`, `basis`, `source`) and describe each registered call (audience, role, outcome) in `manual-call-profiles`, so Bench can tell which calls a rule applies to. New `check_rule_tags.py` reports rules without a valid tag, and (with the registered call keys) tags that name a call that is not registered; such a tag is treated as unclear, never as a reason to drop a rule. Sources stay under 8,000 characters.
+
 ## 0.2.3 (beta)
 
 - `register_calls` platform operation: register one entry per model call (messages as fragments, model
