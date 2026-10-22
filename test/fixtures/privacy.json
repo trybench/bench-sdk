@@ -10,8 +10,12 @@
     "nested": "{\"full_name\":\"Private Person\"}",
     "secret": "Bearer synthetic-secret-value",
     "count": 42,
-    "invalid": "999.999.999.999 reference 4242424242424241"
+    "invalid": "999.999.999.999 reference 4242424242424241",
+    "words": "desk-support-tools task-runner-service ask-the-expert-handler risk-averse-customers",
+    "keys": "key=sk-abcdefghijklmnopqrst and x bench_sk_uvwxyzabcdefghijklmn then apikey_zyxwvutsrqponmlkjihg"
   },
-  "forbidden": ["person@example.test", "12345678", "192.168.1.2", "4242-4242", "4242 4242", "4242424242424242", "4.242424242424242", "dynamic@example.test", "Private Person", "synthetic-secret-value"],
-  "preserved": ["999.999.999.999", "4242424242424241", "1.25"]
+  "forbidden": ["abcdefghijklmnopqrst", "uvwxyzabcdefghijklmn", "zyxwvutsrqponmlkjihg", "person@example.test", "12345678", "192.168.1.2", "4242-4242", "4242 4242", "4242424242424242", "4.242424242424242", "dynamic@example.test", "Private Person", "synthetic-secret-value"],
+  "preserved": ["desk-support-tools task-runner-service ask-the-expert-handler risk-averse-customers", "key=[REDACTED_SECRET] and x [REDACTED_SECRET] then [REDACTED_SECRET]", "999.999.999.999", "4242424242424241", "1.25"],
+  "accepted_repositories": ["acme/helpdesk-assistant", "acme/task-runner-service", "docs/desk-support-tools"],
+  "accepted_branches": ["feat/task-scheduler-retries", "fix/risk-averse-customers", "main"]
 }

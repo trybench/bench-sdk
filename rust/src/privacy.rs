@@ -9,7 +9,7 @@ static METADATA: LazyLock<Regex> = LazyLock::new(|| {
     Regex::new(r"^(code\.(filepath|lineno)|gen_ai\.(system|provider\.name|operation\.name|agent\.name|request\.(model|temperature|top_p|top_k|max_tokens)|response\.model|tool\.(name|type|call\.id)|usage\.(input_tokens|output_tokens))|bench\.(component_id|environment|prompt_version|duration_ms|cost\.(usd|source|pricing_version)))$").unwrap()
 });
 static SECRET: LazyLock<Regex> = LazyLock::new(|| {
-    Regex::new(r"(?i)(?:bench_sk_|apikey_|sk-)[a-zA-Z0-9_-]{8,}|Bearer\s+[a-zA-Z0-9._~+/-]+")
+    Regex::new(r"(?i)(^|[^a-z])(?:bench_sk_|apikey_|sk-)[a-zA-Z0-9_-]{8,}|Bearer\s+[a-zA-Z0-9._~+/-]+")
         .unwrap()
 });
 static EMAIL: LazyLock<Regex> = LazyLock::new(|| {
@@ -29,7 +29,7 @@ pub fn text(value: &str) -> String {
     if value.len() > 16000 {
         return "[CONTENT_LIMIT]".into();
     }
-    let value = SECRET.replace_all(value, "[REDACTED_SECRET]");
+    let value = SECRET.replace_all(value, "${1}[REDACTED_SECRET]");
     let value = EMAIL.replace_all(&value, "[REDACTED_EMAIL]");
     let value = IP.replace_all(&value, |c: &regex::Captures| {
         if c[0].parse::<Ipv4Addr>().is_ok() {
