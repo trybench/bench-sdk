@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 0.2.4 (beta)
 
 - Skill: a registered tool may carry an optional `output_schema` (JSON Schema for what it returns, converted from the code's types, never invented). The guidance covers the top level (text, list or enum tools too), the supported keywords, the limits, and the per-call warning Bench returns for an unusable schema. The catalog copies in all four clients are synced with the API (the `register_calls` `tools` description now names `output_schema`; `set_workspace_billing_holder` was missing from the copies). No runtime code change.
 - Skill: write each rule in the rules source as a tagged bullet (`applies_to`, `basis`, `source`) and describe each registered call (audience, role, outcome) in `manual-call-profiles`, so Bench can tell which calls a rule applies to. New `check_rule_tags.py` reports rules without a valid tag, and (with the registered call keys) tags that name a call that is not registered; such a tag is treated as unclear, never as a reason to drop a rule. Sources stay under 8,000 characters.
