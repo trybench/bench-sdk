@@ -17,6 +17,8 @@ placeholder syntax such as `{row[0]}` itself and tells you what it changed; a ca
 that "looks like Call #N" was registered as new because the match was doubtful; a
 call missing from a later registration is kept and labelled not seen. If Bench
 could not reach its checker, calls are stored as not checked and are not evaluated
-until you register again. Registration is repeatable, edits no source, starts no
+until you register again. A warning that a tool's `output_schema` is ignored names the tool and
+the reason (see the tools paragraph in `configuration-and-verification.md`): fix the schema,
+or leave it out, and register again. Registration is repeatable, edits no source, starts no
 evaluation, and does not need a GitHub connection. Cite real files and lines, and
 do not invent text, models, tools or settings.

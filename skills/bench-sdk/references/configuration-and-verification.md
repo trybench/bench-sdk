@@ -26,6 +26,30 @@ A tool that a library supplies, whose definition is not in the repository, is li
 the name the code uses; say in `notes` that its description and schema are not visible,
 and do not invent them. A tool defined in the repository is listed with the schema you
 can read.
+
+A tool may also carry an `output_schema`: a JSON Schema (draft 2020-12) for what the tool
+returns, in the same object as its name (inside `function` for the OpenAI shape). Bench can
+use it when it writes the fake tool replies it tests with, so those replies look like the
+real ones. Add it only when you can read the real return shape; convert it
+from the code's types (Pydantic, Zod, Go structs, Rust types) and never invent fields or
+values. Leave it out for a tool you cannot read, and for tools a library supplies.
+- The top level must say what the tool returns: `type`, or `enum`, `const`, `anyOf`,
+  `oneOf`, `allOf` or `$ref`. A tool that returns text is `{"type": "string"}`; a list is
+  `{"type": "array", "items": ...}`. A flat map of field names (`{"temperature": "number"}`)
+  is not a JSON Schema and is ignored.
+- Supported keywords: `type`, `properties`, `required`, `additionalProperties`, `items`,
+  `prefixItems`, `enum`, `const`, `anyOf`, `oneOf`, `allOf`, `minimum`, `maximum`,
+  `exclusiveMinimum`, `exclusiveMaximum`, `multipleOf`, `minLength`, `maxLength`, `pattern`,
+  `minItems`, `maxItems`, `uniqueItems`, and `$ref` to a definition in the schema's own
+  root `$defs` (or `definitions`). Annotations such as `title`, `description`, `default`,
+  `examples`, `format` and `x-` keys are ignored. Any other keyword (for example `not`,
+  `if`/`then`/`else`, `patternProperties`, `dependentRequired`, `unevaluatedProperties`,
+  `contains`, `propertyNames`, `minProperties`, `$id`) makes the whole schema unusable: Bench
+  ignores all of it and never applies part of it. Take the keyword out, or leave the schema out.
+- Limits: 16 KB per schema, nesting depth 8, 64 KB of schemas per call, 64 tools per call.
+  A recursive definition never ends and counts as too deep.
+- If a schema is unusable, the registration reply says so in that call's `warnings`, with
+  the tool's name and the reason; the tool itself is still registered as sent.
 Do not add `suggested` configurations yourself. Use `effective_provenance`
 `observed` only if you saw the values in a real request; `declared` when you read
 them from code; `unknown` when you could not tell. Use `slots` for
