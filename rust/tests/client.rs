@@ -305,6 +305,25 @@ async fn envelope_names_and_oversized_content_are_filtered() {
 }
 
 #[test]
+fn names_with_key_prefixes_inside_words_are_accepted() {
+    let fixture: Value = serde_json::from_str(include_str!("fixtures/privacy.json")).unwrap();
+    for repository in fixture["accepted_repositories"].as_array().unwrap() {
+        for branch in fixture["accepted_branches"].as_array().unwrap() {
+            let options = Options::new(
+                "bench_sk_synthetic_test_key",
+                repository.as_str().unwrap(),
+                branch.as_str().unwrap(),
+            );
+            assert!(Bench::new(options).is_ok(), "{repository} {branch}");
+        }
+    }
+    for repository in ["sk-abcdefghijklmnopqrst/app", "acme/bench_sk_abcdefghijklmnopqrst"] {
+        let options = Options::new("bench_sk_synthetic_test_key", repository, "main");
+        assert!(Bench::new(options).is_err(), "{repository}");
+    }
+}
+
+#[test]
 fn infer_span_kind_follows_genai_conventions() {
     let attrs = |pairs: &[(&str, &str)]| -> serde_json::Map<String, Value> {
         pairs

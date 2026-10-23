@@ -12,8 +12,8 @@ import (
 
 var sensitive = regexp.MustCompile(`(?i)authorization|cookie|password|secret|token|api.?key|email|phone|address|user.?id|(?:first|last|full).?name|card.?number`)
 var metadata = regexp.MustCompile(`^(code\.(filepath|lineno)|gen_ai\.(system|provider\.name|operation\.name|agent\.name|request\.(model|temperature|top_p|top_k|max_tokens)|response\.model|tool\.(name|type|call\.id)|usage\.(input_tokens|output_tokens))|bench\.(component_id|environment|prompt_version|duration_ms|cost\.(usd|source|pricing_version)))$`)
-var secretPattern = regexp.MustCompile(`(?i)(?:bench_sk_|apikey_|sk-)[a-zA-Z0-9_-]{8,}|Bearer\s+[a-zA-Z0-9._~+/-]+`)
-var emailPattern = regexp.MustCompile("(?i)[a-z0-9.!#$%&'*+/=?^_`{|}~-]+@[a-z0-9-]+(?:\\.[a-z0-9-]+)+")
+var secretPattern = regexp.MustCompile(`(?i)(^|[^a-z])(?:bench_sk_|apikey_|sk-)[a-zA-Z0-9_-]{8,}|Bearer\s+[a-zA-Z0-9._~+/-]+`)
+var emailPattern = regexp.MustCompile("(?i)[a-z0-9._%+-]+@[a-z0-9-]+(?:\\.[a-z0-9-]+)+")
 var phonePattern = regexp.MustCompile(`\+\d[\d ()-]{8,}\d`)
 var ipPattern = regexp.MustCompile(`\b(?:[0-9]{1,3}\.){3}[0-9]{1,3}\b`)
 var cardPattern = regexp.MustCompile(`\b(?:[0-9]{4}(?:[ -][0-9]{4}){3}[ -][0-9]{3}|[0-9]{4}(?:[ -][0-9]{4}){3}|[0-9]{4}[ -][0-9]{6}[ -][0-9]{5}|[0-9]{13,19})\b`)
@@ -22,7 +22,7 @@ func redactText(s string) string {
 	if len(s) > 16000 {
 		return "[CONTENT_LIMIT]"
 	}
-	s = secretPattern.ReplaceAllString(s, "[REDACTED_SECRET]")
+	s = secretPattern.ReplaceAllString(s, "${1}[REDACTED_SECRET]")
 	s = emailPattern.ReplaceAllString(s, "[REDACTED_EMAIL]")
 	s = ipPattern.ReplaceAllStringFunc(s, func(v string) string {
 		if net.ParseIP(v) != nil {

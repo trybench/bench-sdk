@@ -3354,6 +3354,7 @@ export const operationCatalog = {
                         "type": "string"
                       },
                       "tools": {
+                        "description": "Tools this call sends, each with name, description and input_schema. A tool may add output_schema, a JSON Schema object of its output; Bench checks simulated replies against it.",
                         "items": {
                           "type": "object"
                         },
@@ -4611,6 +4612,31 @@ export const operationCatalog = {
           "type": "string"
         }
       },
+      "query": {
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object"
+      },
+      "read_only": false
+    },
+    {
+      "auth": "account",
+      "body": {
+        "additionalProperties": false,
+        "properties": {
+          "user_id": {
+            "type": "string"
+          }
+        },
+        "type": "object"
+      },
+      "description": "Move the workspace's billing to another admin: whose plan and evaluation balance every member uses. Any workspace admin may do this. Requires Bench OAuth account authorization; a scoped API key is insufficient.",
+      "id": "set_workspace_billing_holder",
+      "mcp": false,
+      "mcp_legacy": false,
+      "method": "PUT",
+      "path": "/api/org/billing-holder",
+      "path_parameters": {},
       "query": {
         "additionalProperties": false,
         "properties": {},
