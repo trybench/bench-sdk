@@ -110,7 +110,8 @@ this file) to open **before** you do it; do not work from memory of the rules.
 4. **Conditions.** If the code decides which pieces to send, use `conditions` and
    `when`; never one call per combination. Same file as step 3.
 5. **Configuration, slots, tools.** Exactly one configuration with `source: "code"`;
-   `model` is required. Open `references/configuration-and-verification.md`.
+   `model` is required. A tool is listed with its name, description and input schema, and
+   may add an `output_schema` for what it returns. Open `references/configuration-and-verification.md`.
 6. **Verify before you claim it.** `agent_verified` only if you ran or evaluated the code
    that builds the prompt and every checked state matched; otherwise `declared_only`
    or `evidence_lacking`. Same file as step 5.
